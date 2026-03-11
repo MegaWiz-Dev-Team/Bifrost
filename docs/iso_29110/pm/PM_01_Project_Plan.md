@@ -1,7 +1,7 @@
 # PM-01: Project Plan (แผนโครงการ)
-**Project Name:** Project Bifrost — Agent Runtime Engine
+**Project Name:** Bifrost — Agent Runtime Engine
 **Document Version:** 1.0
-**Date:** 2026-03-07
+**Date:** 2026-03-11
 **Standard:** ISO/IEC 29110 — PM Process
 
 ---
@@ -9,75 +9,76 @@
 ## 1. Project Scope & Objectives (ขอบเขตและวัตถุประสงค์)
 
 ### เป้าหมาย
-พัฒนา Agent Runtime Engine ที่รัน ReAct loop, tool calling ผ่าน MCP, และ Agent-to-Agent (A2A) protocol สำหรับ AI agents ใน Asgard ecosystem
+พัฒนา Agent Runtime Engine สำหรับ Asgard AI Platform ที่สามารถรัน AI Agents ด้วย ReAct loop, tool calling ผ่าน MCP, และ multi-agent collaboration โดยเชื่อมต่อกับ Heimdall (LLM Gateway) และ Mimir (RAG + Agent Builder)
 
 ### ขอบเขต
-- **ReAct Loop Engine** — Observe-Think-Act cycle with streaming
-- **MCP Tool Calling** — Call Mimir (RAG), Fenrir (computer use), external MCP servers
-- **A2A Protocol** — Agent-to-Agent communication (Google A2A standard)
-- **Streaming Response** — SSE streaming to frontend
-- **Multi-Agent Orchestration** — Sequential, parallel, and router patterns
+| Feature | Description |
+|:--|:--|
+| Agent Executor | ReAct loop (think → tool_call → observe → loop) |
+| Tool Registry | MCP-based tool system + built-in tools |
+| Session Manager | Short/long-term memory (SQLite) |
+| Heimdall Client | OpenAI-compatible LLM inference via Gateway |
+| Agent Router | Multi-agent delegation and handoff |
+| REST API | FastAPI endpoints with SSE streaming |
+| PSO Optimizer | Auto-generate agent configs (Phase 4) |
 
 ### Tech Stack
 | Layer | Technology |
 |:--|:--|
-| Language | Python 3.12 |
-| Framework | FastAPI |
-| LLM Gateway | Heimdall (via HTTP) |
-| Tool Protocol | MCP (Model Context Protocol) |
-| Agent Protocol | A2A (Agent-to-Agent) |
-| Container | Docker |
-
-### Part of Asgard Ecosystem
-| Connection | Protocol | Description |
-|:--|:--|:--|
-| Bifrost → Heimdall | HTTP/SSE | LLM inference |
-| Bifrost → Mimir | MCP | RAG context retrieval |
-| Bifrost → Fenrir | MCP | Browser/shell automation |
-| Bifrost → Yggdrasil | OIDC | Authentication |
+| Runtime | Python 3.11+ |
+| Framework | FastAPI + Uvicorn |
+| Database | SQLite (aiosqlite) |
+| LLM Client | httpx (async) → Heimdall |
+| MCP Client | mcp SDK |
+| Serialization | Pydantic v2 |
 
 ---
 
 ## 2. Project Organization & Resources (โครงสร้างทีมและทรัพยากร)
 
-| Role | Person/Team |
-|:--|:--|
-| **Project Manager** | Paripol (MegaWiz) |
-| **Developer** | AI-assisted (Antigravity) |
-| **Contact** | paripol@megawiz.co |
+| Role | Person/Team | Responsibility |
+|:--|:--|:--|
+| **Founder / CTO** | Paripol (MegaWiz) | Architecture, strategy |
+| **Developer** | AI-assisted (Antigravity) | Code, testing, documentation |
 
 ---
 
 ## 3. Project Schedule & Milestones (ตารางเวลาและจุดส่งมอบ)
 
-### Sprint 1: ReAct Core (Target: 2026-04)
-- [ ] FastAPI project structure with Docker
-- [ ] ReAct loop engine (Observe → Think → Act → Respond)
-- [ ] Heimdall integration for LLM calls
-- [ ] SSE streaming response
-- [ ] Health check endpoint
-- [ ] Unit tests (10+ tests)
+### Sprint 1: Foundation & Tools (Mar 11 - Mar 25, 2026) — CURRENT
+| Deliverable | Status |
+|:--|:--|
+| Project scaffolding (pyproject.toml, Dockerfile, .env) | ✅ Done |
+| Config module (Pydantic Settings) | ✅ Done |
+| Database layer (SQLite + aiosqlite) | ✅ Done |
+| Heimdall client (httpx async) | ✅ Done |
+| Tool system (base + registry + 3 built-in tools) | ✅ Done |
+| Agent Executor (ReAct loop) | ✅ Done |
+| Session Manager | ✅ Done |
+| API routes + FastAPI entry point | ✅ Done |
+| Unit & integration tests (TDD) | ✅ Done (27 tests passing) |
 
-### Sprint 2: MCP Integration (Target: 2026-05)
-- [ ] MCP client implementation
-- [ ] Tool registry (vector_search, calculate, web_fetch)
-- [ ] Mimir MCP connection (RAG retrieval)
-- [ ] Tool result injection into ReAct loop
-- [ ] Integration tests
+### Sprint 2: MCP & Mimir Integration (Mar 25 - Apr 8, 2026)
+| Deliverable | Status |
+|:--|:--|
+| MCP client integration | 📋 Planned |
+| Mimir RAG connector | 📋 Planned |
+| Agent config sync from Mimir API | 📋 Planned |
+| Webhook tools | 📋 Planned |
 
-### Sprint 3: A2A Protocol (Target: 2026-06)
-- [ ] A2A server (receive agent requests)
-- [ ] A2A client (call external agents)
-- [ ] Agent card discovery
-- [ ] Multi-agent orchestration (sequential, parallel)
-- [ ] E2E tests with Mimir + Heimdall
+### Sprint 3: Multi-Agent & Routing (Apr 8 - Apr 22, 2026)
+| Deliverable | Status |
+|:--|:--|
+| Agent Router (multi-agent delegation) | 📋 Planned |
+| Execution tracing & metrics | 📋 Planned |
+| A2A protocol support | 📋 Planned |
 
-### Sprint 4: Production Hardening (Target: 2026-07)
-- [ ] Structured logging & request tracing
-- [ ] Rate limiting per tenant
-- [ ] Error handling & retry logic
-- [ ] Performance optimization
-- [ ] API documentation (OpenAPI)
+### Sprint 4: Self-Optimization (Apr 22 - May 6, 2026)
+| Deliverable | Status |
+|:--|:--|
+| Plan-and-Execute strategy | 📋 Planned |
+| Self-reflection loop | 📋 Planned |
+| PSO Agent Auto-Generate | 📋 Planned |
 
 ---
 
@@ -85,11 +86,28 @@
 
 | Risk | Impact | Mitigation |
 |:--|:--|:--|
-| **ReAct loop infinite cycle** | High | Max iteration limit (10); timeout per step |
-| **MCP tool failure** | Medium | Graceful degradation; error message in response |
-| **LLM latency (Heimdall)** | Medium | Streaming SSE; async processing |
-| **Python performance bottleneck** | Low | Async FastAPI; consider Rust port if needed |
-| **A2A protocol immaturity** | Medium | Start with simple sequential; evolve incrementally |
+| **Heimdall unavailable** | High | Graceful degradation, health check retry |
+| **LLM generates invalid tool calls** | Medium | JSON schema validation, error recovery, max retries |
+| **Infinite ReAct loop** | High | max_iterations (10) + max_execution_time (120s) guards |
+| **Memory leak in long sessions** | Medium | Session TTL, auto-cleanup, connection pooling |
+| **SQLite concurrency** | Medium | WAL mode, connection pool, async locks |
+| **Tool execution timeout** | Medium | Per-tool timeout (30s), graceful abort |
+
+---
+
+## 5. Quality Assurance (การประกันคุณภาพ)
+
+### Methodology
+- **TDD** (Test-Driven Development) — เขียน test ก่อน code
+- **Agile Scrum** — 2-week sprints
+- **ISO 29110** — PM + SI processes
+
+### Test Strategy
+| Level | Tool | Coverage Target |
+|:--|:--|:--|
+| Unit Tests | pytest + pytest-asyncio | ≥ 80% |
+| Integration Tests | FastAPI TestClient | All API endpoints |
+| E2E Tests | curl + Heimdall | Happy path + error cases |
 
 ---
 
