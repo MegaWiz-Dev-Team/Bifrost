@@ -68,12 +68,14 @@
 | Webhook tools (custom HTTP tools) | ✅ Done |
 | Tests (TDD) | ✅ Done (52 total, 25 new) |
 
-### Sprint 3: Multi-Agent & Routing (Apr 8 - Apr 22, 2026)
+### Sprint 3: Multi-Agent & Routing (Mar 11, 2026) — ✅ COMPLETED
 | Deliverable | Status |
 |:--|:--|
-| Agent Router (multi-agent delegation) | 📋 Planned |
-| Execution tracing & metrics | 📋 Planned |
-| A2A protocol support | 📋 Planned |
+| Agent Router (regex + priority routing) | ✅ Done |
+| Delegate tool (agent-to-agent) | ✅ Done |
+| Execution tracing (SQLite + API) | ✅ Done |
+| A2A protocol (Agent Card + Tasks) | ✅ Done |
+| Tests (TDD) | ✅ Done (77 total, 25 new) |
 
 ### Sprint 4: Self-Optimization (Apr 22 - May 6, 2026)
 | Deliverable | Status |

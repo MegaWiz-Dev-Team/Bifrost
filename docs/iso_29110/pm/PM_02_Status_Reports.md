@@ -12,6 +12,7 @@
 | ---------- | ----------------------------------------------- | --------- | ------------------------------------------------------------------------ |
 | 2026-03-11 | Sprint 1 (Foundation & Tools)                   | Completed | [ดูรายละเอียด PM_02_01_Sprint1_Report](PM_02_01_Sprint1_Report.md)       |
 | 2026-03-11 | Sprint 2 (MCP & Mimir Integration)              | Completed | [ดูรายละเอียด PM_02_02_Sprint2_Report](PM_02_02_Sprint2_Report.md)       |
+| 2026-03-11 | Sprint 3 (Multi-Agent & Routing)                | Completed | [ดูรายละเอียด PM_02_03_Sprint3_Report](PM_02_03_Sprint3_Report.md)       |
 
 ---
 

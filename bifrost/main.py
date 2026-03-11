@@ -14,7 +14,8 @@ from bifrost.db.connection import get_db, close_db
 from bifrost.tools.builtin import register_builtin_tools
 from bifrost.tools.mimir import register_mimir_tools
 from bifrost.core.agents import agent_store, AgentConfig
-from bifrost.api import health, tools, agents
+from bifrost.core.router import router as agent_router
+from bifrost.api import health, tools, agents, a2a, traces
 
 
 # Configure logging
@@ -86,6 +87,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(tools.router)
 app.include_router(agents.router)
+app.include_router(a2a.router)
+app.include_router(traces.router)
 
 
 if __name__ == "__main__":
