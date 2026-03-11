@@ -8,6 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 from bifrost.clients.heimdall import HeimdallClient
 from bifrost.config import settings
 from bifrost.core.executor import AgentExecutor
+from bifrost.core.agents import agent_store
 from bifrost.memory.session import SessionManager
 from bifrost.tools.registry import registry
 
@@ -16,12 +17,6 @@ router = APIRouter(prefix="/v1/agents", tags=["agents"])
 # Shared instances
 _heimdall = HeimdallClient()
 _session_mgr = SessionManager()
-
-# Default system prompt for test agents
-DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant powered by Bifrost.
-You have access to tools that you can use to help answer questions.
-Always think step by step. Use tools when appropriate.
-Respond in the same language as the user."""
 
 
 class RunRequest(BaseModel):
@@ -33,10 +28,27 @@ class RunRequest(BaseModel):
     temperature: float = 0.7
 
 
+@router.get("")
+async def list_agents():
+    """List all configured agents."""
+    agents_list = agent_store.list_agents()
+    return {
+        "agents": [a.to_dict() for a in agents_list],
+        "total": len(agents_list),
+    }
+
+
 @router.post("/{agent_id}/run")
 async def run_agent(agent_id: str, request: RunRequest):
     """Execute an agent (non-streaming). Returns full result."""
-    system_prompt = request.system_prompt or DEFAULT_SYSTEM_PROMPT
+    # Look up agent config
+    agent_config = agent_store.get(agent_id)
+    system_prompt = request.system_prompt or (
+        agent_config.system_prompt if agent_config else
+        "You are a helpful AI assistant. Respond in the same language as the user."
+    )
+    model = request.model or (agent_config.model if agent_config else None)
+    temperature = request.temperature or (agent_config.temperature if agent_config else 0.7)
 
     # Get or create session
     session_id = request.session_id
@@ -63,8 +75,8 @@ async def run_agent(agent_id: str, request: RunRequest):
     result = await executor.execute(
         system_prompt=system_prompt,
         user_input=request.input,
-        model=request.model,
-        temperature=request.temperature,
+        model=model,
+        temperature=temperature,
         history=history,
     )
 
@@ -94,7 +106,13 @@ async def run_agent(agent_id: str, request: RunRequest):
 @router.post("/{agent_id}/stream")
 async def stream_agent(agent_id: str, request: RunRequest):
     """Execute an agent with SSE streaming."""
-    system_prompt = request.system_prompt or DEFAULT_SYSTEM_PROMPT
+    agent_config = agent_store.get(agent_id)
+    system_prompt = request.system_prompt or (
+        agent_config.system_prompt if agent_config else
+        "You are a helpful AI assistant. Respond in the same language as the user."
+    )
+    model = request.model or (agent_config.model if agent_config else None)
+    temperature = request.temperature or (agent_config.temperature if agent_config else 0.7)
 
     session_id = request.session_id
     history = []
@@ -120,8 +138,8 @@ async def stream_agent(agent_id: str, request: RunRequest):
         async for event in executor.execute_stream(
             system_prompt=system_prompt,
             user_input=request.input,
-            model=request.model,
-            temperature=request.temperature,
+            model=model,
+            temperature=temperature,
             history=history,
         ):
             if event["event"] == "done":

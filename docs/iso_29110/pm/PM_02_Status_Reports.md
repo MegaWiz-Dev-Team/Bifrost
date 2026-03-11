@@ -11,6 +11,7 @@
 | Date       | Sprint / Milestone                              | Status    | Details                                                                  |
 | ---------- | ----------------------------------------------- | --------- | ------------------------------------------------------------------------ |
 | 2026-03-11 | Sprint 1 (Foundation & Tools)                   | Completed | [ดูรายละเอียด PM_02_01_Sprint1_Report](PM_02_01_Sprint1_Report.md)       |
+| 2026-03-11 | Sprint 2 (MCP & Mimir Integration)              | Completed | [ดูรายละเอียด PM_02_02_Sprint2_Report](PM_02_02_Sprint2_Report.md)       |
 
 ---
 

@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from bifrost.config import settings
 from bifrost.db.connection import get_db, close_db
 from bifrost.tools.builtin import register_builtin_tools
+from bifrost.tools.mimir import register_mimir_tools
+from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.api import health, tools, agents
 
 
@@ -30,7 +32,26 @@ async def lifespan(app: FastAPI):
     logger.info("⚡ Bifrost starting up...")
     await get_db()
     register_builtin_tools()
-    logger.info(f"📦 Registered {len(tools.registry)} tools")
+    logger.info(f"📦 Registered {len(tools.registry)} built-in tools")
+
+    # Register Mimir RAG tools
+    if settings.mimir_url:
+        register_mimir_tools(settings.mimir_url, settings.mimir_api_key, settings.mimir_tenant_id)
+        logger.info(f"🧠 Mimir tools registered ({settings.mimir_url})")
+
+    # Set up default agent
+    agent_store.add(AgentConfig(
+        id="default",
+        name="Default Assistant",
+        system_prompt=(
+            "You are a helpful AI assistant powered by Bifrost. "
+            "You have access to tools that you can use to help answer questions. "
+            "Always think step by step. Use tools when appropriate. "
+            "Respond in the same language as the user."
+        ),
+    ))
+    logger.info(f"🤖 {len(agent_store)} agent(s) configured")
+
     logger.info(f"🛡️ Heimdall: {settings.heimdall_url}")
     logger.info(f"🗄️ Database: {settings.database_path}")
     logger.info("⚡ Bifrost ready!")

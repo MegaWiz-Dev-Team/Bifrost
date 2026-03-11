@@ -47,11 +47,14 @@ class TestToolEndpoints:
         response = client.get("/v1/tools")
         assert response.status_code == 200
         data = response.json()
-        assert data["total"] == 3
+        assert data["total"] == 6  # 3 built-in + 3 Mimir RAG tools
         tool_names = [t["name"] for t in data["tools"]]
         assert "get_current_time" in tool_names
         assert "calculate" in tool_names
         assert "http_request" in tool_names
+        assert "search_knowledge" in tool_names
+        assert "list_sources" in tool_names
+        assert "get_document" in tool_names
 
     def test_get_tool(self, client):
         response = client.get("/v1/tools/calculate")

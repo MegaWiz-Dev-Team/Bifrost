@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Database
     database_path: str = Field(default="data/bifrost.db", description="SQLite database file path")
 
+    # Mimir connection
+    mimir_url: str = Field(default="http://localhost:3000", description="Mimir API URL")
+    mimir_api_key: str = Field(default="", description="Mimir API key")
+    mimir_tenant_id: str = Field(default="default", description="Mimir tenant ID")
+
     # Agent Execution Limits
     max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
     max_execution_time: int = Field(default=120, description="Max execution time in seconds")

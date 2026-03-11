@@ -45,7 +45,7 @@
 
 ## 3. Project Schedule & Milestones (ตารางเวลาและจุดส่งมอบ)
 
-### Sprint 1: Foundation & Tools (Mar 11 - Mar 25, 2026) — CURRENT
+### Sprint 1: Foundation & Tools (Mar 11, 2026) — ✅ COMPLETED
 | Deliverable | Status |
 |:--|:--|
 | Project scaffolding (pyproject.toml, Dockerfile, .env) | ✅ Done |
@@ -56,15 +56,17 @@
 | Agent Executor (ReAct loop) | ✅ Done |
 | Session Manager | ✅ Done |
 | API routes + FastAPI entry point | ✅ Done |
-| Unit & integration tests (TDD) | ✅ Done (27 tests passing) |
+| Unit & integration tests (TDD) | ✅ Done (27 tests) |
 
-### Sprint 2: MCP & Mimir Integration (Mar 25 - Apr 8, 2026)
+### Sprint 2: MCP & Mimir Integration (Mar 11, 2026) — ✅ COMPLETED
 | Deliverable | Status |
 |:--|:--|
-| MCP client integration | 📋 Planned |
-| Mimir RAG connector | 📋 Planned |
-| Agent config sync from Mimir API | 📋 Planned |
-| Webhook tools | 📋 Planned |
+| MCP client (stdio + SSE transport) | ✅ Done |
+| MCP tool discovery + execution | ✅ Done |
+| Mimir RAG tools (search, sources, documents) | ✅ Done |
+| Agent config sync from Mimir API | ✅ Done |
+| Webhook tools (custom HTTP tools) | ✅ Done |
+| Tests (TDD) | ✅ Done (52 total, 25 new) |
 
 ### Sprint 3: Multi-Agent & Routing (Apr 8 - Apr 22, 2026)
 | Deliverable | Status |
