@@ -1,5 +1,19 @@
 # Release Notes — Bifrost
 
+## v0.5.0 — Docker & Compose (2026-03-13)
+
+### 🐳 Infrastructure
+- Dockerfile rewritten: single-stage build, hatchling compatibility
+- Healthcheck endpoint fixed: `/health` → `/healthz`
+- `.dockerignore` added (includes README.md for hatchling)
+- Integrated into Asgard unified Docker Compose (:8100)
+
+### 📊 Stats
+- **99 tests**, all passing
+- Sprint 5 complete
+
+---
+
 ## v0.4.0 — Self-Optimization (2026-03-11)
 
 > Asgard เป็นของทุกคนแล้ว — Asgard belongs to everyone.
