@@ -13,6 +13,7 @@ from bifrost.config import settings
 from bifrost.db.connection import get_db, close_db
 from bifrost.tools.builtin import register_builtin_tools
 from bifrost.tools.mimir import register_mimir_tools
+from bifrost.tools.eir import register_eir_tools
 from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.core.router import router as agent_router
 from bifrost.api import health, tools, agents, a2a, traces
@@ -25,10 +26,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("bifrost")
 
+# MCP manager for external tool servers
+_mcp_manager = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
+    global _mcp_manager
+
     # Startup
     logger.info("⚡ Bifrost starting up...")
     await get_db()
@@ -39,6 +45,29 @@ async def lifespan(app: FastAPI):
     if settings.mimir_url:
         register_mimir_tools(settings.mimir_url, settings.mimir_api_key, settings.mimir_tenant_id)
         logger.info(f"🧠 Mimir tools registered ({settings.mimir_url})")
+
+    # Register Eir Gateway tools
+    if settings.eir_url:
+        register_eir_tools(settings.eir_url, settings.eir_api_key)
+        logger.info(f"🏥 Eir tools registered ({settings.eir_url})")
+
+    # Connect Fenrir via MCP (SSE transport)
+    if settings.fenrir_enabled and settings.fenrir_url:
+        try:
+            from bifrost.clients.mcp import MCPManager, MCPServerConfig
+            _mcp_manager = MCPManager()
+            fenrir_config = MCPServerConfig(
+                name="fenrir",
+                transport="sse",
+                url=settings.fenrir_url,
+            )
+            client = await _mcp_manager.add_server(fenrir_config)
+            from bifrost.tools.registry import registry
+            count = await client.discover_and_register(registry)
+            logger.info(f"🐺 Fenrir MCP connected — {count} tools discovered ({settings.fenrir_url})")
+        except Exception as e:
+            logger.warning(f"🐺 Fenrir MCP connection failed (non-fatal): {e}")
+            _mcp_manager = None
 
     # Set up default agent
     agent_store.add(AgentConfig(
@@ -61,6 +90,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("⚡ Bifrost shutting down...")
+    if _mcp_manager:
+        await _mcp_manager.disconnect_all()
     await close_db()
 
 

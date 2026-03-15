@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     mimir_api_key: str = Field(default="", description="Mimir API key")
     mimir_tenant_id: str = Field(default="default", description="Mimir tenant ID")
 
+    # Eir Gateway connection
+    eir_url: str = Field(default="http://localhost:8300", description="Eir Gateway URL")
+    eir_api_key: str = Field(default="", description="Eir Gateway API key")
+
+    # Fenrir MCP connection
+    fenrir_url: str = Field(default="http://localhost:8200", description="Fenrir MCP Server URL")
+    fenrir_enabled: bool = Field(default=True, description="Enable Fenrir MCP connection")
+
     # Agent Execution Limits
     max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
     max_execution_time: int = Field(default=120, description="Max execution time in seconds")

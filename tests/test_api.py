@@ -47,7 +47,7 @@ class TestToolEndpoints:
         response = client.get("/v1/tools")
         assert response.status_code == 200
         data = response.json()
-        assert data["total"] == 6  # 3 built-in + 3 Mimir RAG tools
+        assert data["total"] == 9  # 3 built-in + 3 Mimir RAG + 3 Eir Gateway
         tool_names = [t["name"] for t in data["tools"]]
         assert "get_current_time" in tool_names
         assert "calculate" in tool_names
@@ -55,6 +55,9 @@ class TestToolEndpoints:
         assert "search_knowledge" in tool_names
         assert "list_sources" in tool_names
         assert "get_document" in tool_names
+        assert "eir_patient_search" in tool_names
+        assert "eir_fhir_query" in tool_names
+        assert "eir_clinical_summary" in tool_names
 
     def test_get_tool(self, client):
         response = client.get("/v1/tools/calculate")
