@@ -1,5 +1,20 @@
 # Release Notes — Bifrost
 
+## v0.7.0 — Mimir Agent Sync (2026-03-15)
+
+### ✨ New Features
+- **`MimirSyncClient`** — periodic agent config sync from Mimir API
+- One-shot `sync_once()` and background `start_periodic()` modes
+- Status tracking for health checks (`/api/messages/status` pattern)
+- `create_sync_client()` factory from settings
+- New config: `MIMIR_SYNC_ENABLED`, `MIMIR_SYNC_INTERVAL`
+
+### 📊 Stats
+- **133 tests**, all passing (0.32s)
+- Sprint 7 complete (ISO 29110 PM-02-07)
+
+---
+
 ## v0.6.0 — JWT Auth + E2E Integration (2026-03-15)
 
 ### 🔒 Security
