@@ -2,15 +2,15 @@
 
 > *"The burning rainbow bridge that connects the realms"*
 >
-> Bifrost is a self-hosted Agent Runtime Engine for deploying, executing, and managing AI agents with tool-use capabilities. Part of the [🏰 Asgard AI Platform](https://github.com/megacare-dev/Asgard).
+> Bifrost is a self-hosted Agent Runtime Engine for deploying, executing, and managing AI agents with tool-use capabilities. Part of the [🏰 Asgard AI Platform](https://github.com/MegaWiz-Dev-Team/Asgard).
 
 | Component | Link |
 |:--|:--|
-| 🏰 Asgard | [Ecosystem Overview](https://github.com/megacare-dev/Asgard) |
-| 🧠 Mimir | [RAG + Agent Builder](https://github.com/megacare-dev/Mimir) |
-| 🛡️ Heimdall | [LLM Gateway](https://github.com/megacare-dev/Heimdall) |
+| 🏰 Asgard | [Ecosystem Overview](https://github.com/MegaWiz-Dev-Team/Asgard) |
+| 🧠 Mimir | [RAG + Agent Builder](https://github.com/MegaWiz-Dev-Team/Mimir) |
+| 🛡️ Heimdall | [LLM Gateway](https://github.com/MegaWiz-Dev-Team/Heimdall) |
 | ⚡ Bifrost | **This repo** |
-| 🐺 Fenrir | [Computer Use Agent](https://github.com/megacare-dev/Fenrir) |
+| 🐺 Fenrir | [Computer Use Agent](https://github.com/MegaWiz-Dev-Team/Fenrir) |
 
 ---
 
@@ -154,7 +154,7 @@ bifrost/
 ## Quick Start
 
 ```bash
-git clone https://github.com/megacare-dev/Bifrost.git
+git clone https://github.com/MegaWiz-Dev-Team/Bifrost.git
 cd Bifrost
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -175,5 +175,5 @@ uvicorn bifrost.main:app --host 0.0.0.0 --port 8100 --reload
 ---
 
 <p align="center">
-  <strong>⚡ Bifrost</strong> — Part of the <a href="https://github.com/megacare-dev/Asgard">🏰 Asgard AI Platform</a>
+  <strong>⚡ Bifrost</strong> — Part of the <a href="https://github.com/MegaWiz-Dev-Team/Asgard">🏰 Asgard AI Platform</a>
 </p>
