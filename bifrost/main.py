@@ -114,6 +114,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# JWT Auth (Yggdrasil + Zitadel)
+from bifrost.middleware.auth import JWTAuthMiddleware
+app.add_middleware(JWTAuthMiddleware)
+
 # Include routers
 app.include_router(health.router)
 app.include_router(tools.router)

@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     fenrir_url: str = Field(default="http://localhost:8200", description="Fenrir MCP Server URL")
     fenrir_enabled: bool = Field(default=True, description="Enable Fenrir MCP connection")
 
+    # Authentication (Yggdrasil + Zitadel)
+    auth_enabled: bool = Field(default=True, description="Enable JWT authentication")
+    zitadel_issuer: str = Field(default="http://localhost:8085", description="Zitadel issuer URL for JWKS")
+    jwt_audience: str = Field(default="", description="Expected JWT audience (optional)")
+
     # Agent Execution Limits
     max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
     max_execution_time: int = Field(default=120, description="Max execution time in seconds")

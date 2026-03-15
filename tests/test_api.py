@@ -19,6 +19,9 @@ def client():
         mock_settings.max_execution_time = 120
         mock_settings.default_model = "qwen3.5"
         mock_settings.log_level = "WARNING"
+        mock_settings.auth_enabled = False
+        mock_settings.zitadel_issuer = ""
+        mock_settings.jwt_audience = ""
 
         from bifrost.main import app
         with TestClient(app) as c:
