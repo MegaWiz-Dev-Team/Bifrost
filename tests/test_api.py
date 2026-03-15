@@ -20,7 +20,7 @@ def client():
         mock_settings.default_model = "qwen3.5"
         mock_settings.log_level = "WARNING"
         mock_settings.auth_enabled = False
-        mock_settings.zitadel_issuer = ""
+        mock_settings.yggdrasil_issuer = ""
         mock_settings.jwt_audience = ""
 
         from bifrost.main import app

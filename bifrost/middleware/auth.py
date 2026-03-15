@@ -1,6 +1,6 @@
 """JWT Auth Middleware — protect Bifrost API endpoints via Yggdrasil.
 
-Uses Yggdrasil's `validate_jwt` to verify Zitadel-issued JWTs.
+Uses Yggdrasil's `validate_jwt` to verify Yggdrasil-issued JWTs.
 Public endpoints (health, docs, A2A agent card) are excluded.
 """
 

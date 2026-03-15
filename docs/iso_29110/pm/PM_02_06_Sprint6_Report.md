@@ -31,7 +31,7 @@
 | `JWTAuthMiddleware` — Starlette middleware | ✅ Done | `bifrost/middleware/auth.py` |
 | Public paths exclusion (health, docs, A2A) | ✅ Done | `bifrost/middleware/auth.py` |
 | `auth_enabled` dev bypass (reads settings at request time) | ✅ Done | `bifrost/middleware/auth.py` |
-| Auth config (auth_enabled, zitadel_issuer, jwt_audience) | ✅ Done | `bifrost/config.py` |
+| Auth config (auth_enabled, yggdrasil_issuer, jwt_audience) | ✅ Done | `bifrost/config.py` |
 | Middleware registration | ✅ Done | `bifrost/main.py` |
 | 14 TDD auth tests (written before implementation) | ✅ Done | `tests/test_auth_middleware.py` |
 | Existing test fixtures updated (auth_enabled=False) | ✅ Done | `tests/test_api.py`, `tests/test_sprint3.py` |
@@ -63,7 +63,7 @@
 | Package | Version | Purpose |
 |:--|:--|:--|
 | PyJWT | 2.12.1 | JWT token validation |
-| yggdrasil | 0.1.0 (editable) | Zitadel JWT middleware + models |
+| yggdrasil | 0.1.0 (editable) | Yggdrasil JWT middleware + models |
 
 ---
 

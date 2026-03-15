@@ -199,7 +199,7 @@ class TestA2AEndpoints:
             mock_settings.mimir_api_key = ""
             mock_settings.mimir_tenant_id = "default"
             mock_settings.auth_enabled = False
-            mock_settings.zitadel_issuer = ""
+            mock_settings.yggdrasil_issuer = ""
             mock_settings.jwt_audience = ""
 
             from bifrost.main import app

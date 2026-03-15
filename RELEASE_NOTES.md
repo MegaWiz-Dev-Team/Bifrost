@@ -18,7 +18,7 @@
 ## v0.6.0 — JWT Auth + E2E Integration (2026-03-15)
 
 ### 🔒 Security
-- **JWT Auth Middleware** via Yggdrasil — Zitadel-issued token validation
+- **JWT Auth Middleware** via Yggdrasil — Yggdrasil-issued token validation
 - Public paths excluded: `/healthz`, `/readyz`, `/docs`, `/.well-known/agent.json`, `/a2a/*`
 - `AUTH_ENABLED=false` dev bypass (reads settings at request time)
 - Depends on: `yggdrasil>=0.1.0`, `PyJWT>=2.0`

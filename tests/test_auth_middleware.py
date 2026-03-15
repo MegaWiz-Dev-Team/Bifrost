@@ -25,7 +25,7 @@ def auth_enabled_client():
         mock_settings.default_model = "qwen3.5"
         mock_settings.log_level = "WARNING"
         mock_settings.auth_enabled = True
-        mock_settings.zitadel_issuer = "http://localhost:8085"
+        mock_settings.yggdrasil_issuer = "http://localhost:8085"
         mock_settings.jwt_audience = ""
         mock_settings.mimir_url = ""
         mock_settings.eir_url = ""
@@ -50,7 +50,7 @@ def auth_disabled_client():
         mock_settings.default_model = "qwen3.5"
         mock_settings.log_level = "WARNING"
         mock_settings.auth_enabled = False
-        mock_settings.zitadel_issuer = ""
+        mock_settings.yggdrasil_issuer = ""
         mock_settings.jwt_audience = ""
         mock_settings.mimir_url = ""
         mock_settings.eir_url = ""
