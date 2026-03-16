@@ -16,7 +16,7 @@ from bifrost.tools.mimir import register_mimir_tools
 from bifrost.tools.eir import register_eir_tools
 from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.core.router import router as agent_router
-from bifrost.api import health, tools, agents, a2a, traces
+from bifrost.api import health, tools, agents, a2a, traces, guardrails
 
 
 # Configure logging
@@ -124,6 +124,7 @@ app.include_router(tools.router)
 app.include_router(agents.router)
 app.include_router(a2a.router)
 app.include_router(traces.router)
+app.include_router(guardrails.router)
 
 
 if __name__ == "__main__":

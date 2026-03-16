@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     yggdrasil_issuer: str = Field(default="http://localhost:8085", description="Yggdrasil issuer URL for JWKS")
     jwt_audience: str = Field(default="", description="Expected JWT audience (optional)")
 
+    # Guardrails
+    guardrails_enabled: bool = Field(default=True, description="Enable AI guardrails")
+    pii_filter_enabled: bool = Field(default=True, description="Enable PII detection/masking")
+    content_filter_enabled: bool = Field(default=True, description="Enable content category filter")
+    hallucination_threshold: float = Field(default=0.5, description="Grounding score threshold")
+
     # Agent Execution Limits
     max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
     max_execution_time: int = Field(default=120, description="Max execution time in seconds")
