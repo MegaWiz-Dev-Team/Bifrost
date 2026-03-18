@@ -171,3 +171,63 @@ async def stream_agent(agent_id: str, request: RunRequest):
             await _session_mgr.add_message(session_id, "assistant", final_output)
 
     return EventSourceResponse(event_generator())
+
+
+# ── CRUD Endpoints ──
+
+
+@router.post("")
+async def create_agent(identity_data: dict):
+    """Create a new agent from AgentIdentity data."""
+    from bifrost.core.identity import AgentIdentity, identity_to_config
+
+    identity = AgentIdentity(**identity_data)
+    config = identity_to_config(identity)
+    agent_store.add(config)
+
+    return {
+        "agent_id": identity.agent_id,
+        "persona_name": identity.persona_name,
+        "persona_role": identity.persona_role,
+        "system_prompt": config.system_prompt,
+        "status": "created",
+    }
+
+
+@router.put("/{agent_id}")
+async def update_agent(agent_id: str, identity_data: dict):
+    """Update an existing agent with new identity data."""
+    from bifrost.core.identity import AgentIdentity, identity_to_config
+
+    identity_data["agent_id"] = agent_id
+    identity = AgentIdentity(**identity_data)
+    config = identity_to_config(identity)
+    agent_store.add(config)
+
+    return {
+        "agent_id": agent_id,
+        "persona_name": identity.persona_name,
+        "persona_role": identity.persona_role,
+        "status": "updated",
+    }
+
+
+@router.delete("/{agent_id}")
+async def delete_agent(agent_id: str):
+    """Delete an agent by ID."""
+    removed = agent_store.remove(agent_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+    return {"agent_id": agent_id, "status": "deleted"}
+
+
+@router.get("/{agent_id}/prompt")
+async def get_agent_prompt(agent_id: str):
+    """Get the system prompt for an agent."""
+    config = agent_store.get(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+    return {
+        "agent_id": agent_id,
+        "system_prompt": config.system_prompt,
+    }

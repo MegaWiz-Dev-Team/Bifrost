@@ -112,6 +112,29 @@ class AgentStore:
             logger.warning(f"Failed to sync agents from Mimir: {e}")
             return 0
 
+    def save_to_file(self, path: str) -> None:
+        """Save all agent configs to a JSON file."""
+        data = [config.to_dict() for config in self._agents.values()]
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        logger.info(f"Saved {len(data)} agents to {path}")
+
+    def load_from_file(self, path: str) -> int:
+        """Load agent configs from a JSON file. Returns count loaded."""
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            count = 0
+            for item in data:
+                config = AgentConfig.from_dict(item)
+                self._agents[config.id] = config
+                count += 1
+            logger.info(f"Loaded {count} agents from {path}")
+            return count
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.warning(f"Failed to load agents from {path}: {e}")
+            return 0
+
     def __len__(self) -> int:
         return len(self._agents)
 
