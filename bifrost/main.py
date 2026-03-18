@@ -126,6 +126,10 @@ app.include_router(a2a.router)
 app.include_router(traces.router)
 app.include_router(guardrails.router)
 
+# Odin orchestrator routes
+from bifrost.api.odin import router as odin_router
+app.include_router(odin_router)
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -139,3 +139,67 @@ class MimirKnowledgeClient:
             results.append(result)
 
         return results
+
+    # ── Cross-Service Intelligence ──
+
+    async def cross_tenant_query(
+        self, question: str, tenants: list[str] | None = None
+    ) -> list[dict]:
+        """Query across multiple tenant knowledge bases.
+
+        Returns list of results, one per tenant queried.
+        """
+        if tenants is None:
+            tenants = [name for name, _ in SERVICE_TENANTS]
+
+        results = []
+        for tenant in tenants:
+            try:
+                result = await self.query_tenant(tenant, question)
+                result["tenant"] = tenant
+                results.append(result)
+            except Exception as e:
+                logger.warning(f"Cross-tenant query failed for {tenant}: {e}")
+                results.append({
+                    "tenant": tenant,
+                    "answer": f"Error: {e}",
+                    "sources": [],
+                })
+        return results
+
+    def get_service_graph(self) -> dict:
+        """Return the service dependency graph.
+
+        Returns nodes (12 services) and edges (dependencies).
+        """
+        nodes = [{"id": name, "label": display} for name, display in SERVICE_TENANTS]
+
+        # Known dependency relationships
+        edges = [
+            {"from": "bifrost", "to": "heimdall", "type": "depends_on"},
+            {"from": "bifrost", "to": "mimir", "type": "depends_on"},
+            {"from": "fenrir", "to": "ratatoskr", "type": "depends_on"},
+            {"from": "fenrir", "to": "eir", "type": "depends_on"},
+            {"from": "forseti", "to": "ratatoskr", "type": "depends_on"},
+            {"from": "huginn", "to": "muninn", "type": "feeds_into"},
+            {"from": "muninn", "to": "forseti", "type": "feeds_into"},
+            {"from": "asgard", "to": "bifrost", "type": "depends_on"},
+            {"from": "asgard", "to": "forseti", "type": "depends_on"},
+            {"from": "bifrost", "to": "yggdrasil", "type": "depends_on"},
+        ]
+
+        return {"nodes": nodes, "edges": edges}
+
+    def register_webhook(self, tenant: str, url: str) -> dict:
+        """Register a webhook for auto-refresh on git push."""
+        if not hasattr(self, "_webhooks"):
+            self._webhooks: list[dict] = []
+
+        entry = {"tenant": tenant, "url": url, "status": "registered"}
+        self._webhooks.append(entry)
+        logger.info(f"Webhook registered for {tenant}: {url}")
+        return entry
+
+    def list_webhooks(self) -> list[dict]:
+        """List all registered webhooks."""
+        return getattr(self, "_webhooks", [])
