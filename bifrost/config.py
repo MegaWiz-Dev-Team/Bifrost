@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
     max_execution_time: int = Field(default=120, description="Max execution time in seconds")
 
-    # Default LLM Model
-    default_model: str = Field(default="qwen3.5", description="Default model name via Heimdall")
+    # Default LLM Model (must match Heimdall backend model ID)
+    default_model: str = Field(default="mlx-community/Qwen3.5-9B-MLX-4bit", description="Default model name via Heimdall")
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
