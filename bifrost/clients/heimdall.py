@@ -1,10 +1,57 @@
 """Heimdall LLM Gateway client — OpenAI-compatible API."""
 
 import json
+import time
 import httpx
 from typing import AsyncIterator
 
 from bifrost.config import settings
+
+
+class PromptCache:
+    """LRU prompt cache with TTL expiration."""
+
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        self._cache: dict[str, tuple[str, float]] = {}
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, key: str) -> str | None:
+        """Get cached prompt, returns None on miss/expiry."""
+        entry = self._cache.get(key)
+        if entry is None:
+            self._misses += 1
+            return None
+        value, ts = entry
+        if time.time() - ts > self._ttl:
+            del self._cache[key]
+            self._misses += 1
+            return None
+        self._hits += 1
+        return value
+
+    def put(self, key: str, value: str) -> None:
+        """Cache a prompt."""
+        if len(self._cache) >= self._max_size:
+            # Evict oldest
+            oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
+            del self._cache[oldest_key]
+        self._cache[key] = (value, time.time())
+
+    def hit_rate(self) -> float:
+        """Return cache hit rate as fraction."""
+        total = self._hits + self._misses
+        if total == 0:
+            return 0.0
+        return self._hits / total
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
 
 
 class HeimdallClient:
@@ -14,6 +61,16 @@ class HeimdallClient:
         self.base_url = (base_url or settings.heimdall_url).rstrip("/")
         self.api_key = api_key or settings.heimdall_api_key
         self._client: httpx.AsyncClient | None = None
+        self._agent_models: dict[str, str] = {}
+        self._prompt_cache = PromptCache()
+
+    def set_agent_model(self, agent_id: str, model: str) -> None:
+        """Configure a specific model for an agent."""
+        self._agent_models[agent_id] = model
+
+    def model_for_agent(self, agent_id: str) -> str:
+        """Get the model configured for an agent, or default."""
+        return self._agent_models.get(agent_id, settings.default_model)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:

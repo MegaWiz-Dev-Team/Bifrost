@@ -231,3 +231,33 @@ async def get_agent_prompt(agent_id: str):
         "agent_id": agent_id,
         "system_prompt": config.system_prompt,
     }
+
+
+@router.get("/{agent_id}/introduce")
+async def introduce_agent(agent_id: str):
+    """Get an agent's self-introduction."""
+    config = agent_store.get(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+
+    role = config.metadata.get("persona_role", "AI Assistant")
+    lang = config.metadata.get("language", "th")
+
+    if lang == "th":
+        intro = (
+            f"สวัสดีครับ ผมชื่อ {config.name} "
+            f"ทำหน้าที่เป็น {role} "
+            f"ใน Asgard AI Platform"
+        )
+    else:
+        intro = (
+            f"Hello, I'm {config.name}, "
+            f"serving as {role} "
+            f"in the Asgard AI Platform."
+        )
+
+    return {
+        "agent_id": agent_id,
+        "name": config.name,
+        "introduction": intro,
+    }
