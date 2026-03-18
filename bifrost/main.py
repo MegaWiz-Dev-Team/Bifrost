@@ -80,7 +80,8 @@ async def lifespan(app: FastAPI):
             "Respond in the same language as the user."
         ),
     ))
-    logger.info(f"🤖 {len(agent_store)} agent(s) configured")
+    
+    logger.info(f"🤖 {len(agent_store)} agent(s) configured in legacy store")
 
     logger.info(f"🛡️ Heimdall: {settings.heimdall_url}")
     logger.info(f"🗄️ Database: {settings.database_path}")
@@ -126,11 +127,24 @@ app.include_router(a2a.router)
 app.include_router(traces.router)
 app.include_router(guardrails.router)
 
-# Odin orchestrator routes
-from bifrost.api.odin import router as odin_router
-app.include_router(odin_router)
+# Asgard ADK orchestrator routes
+import os
 
-
+try:
+    from google.adk.cli.fast_api import get_fast_api_app
+    AGENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
+    adk_app = get_fast_api_app(
+        agents_dir=AGENT_DIR,
+        web=True,
+        a2a=False,
+    )
+    for middleware in adk_app.user_middleware:
+        if middleware.cls.__name__ == "CORSMiddleware":
+            adk_app.user_middleware.remove(middleware)
+    app.mount("/v1/adk", adk_app)
+    logger.info("mounted ADK app at /v1/adk")
+except ImportError:
+    logger.warning("google-adk not installed. Skipped ADK mount.")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

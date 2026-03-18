@@ -136,3 +136,47 @@ def deploy_all_agents(store: AgentStore | None = None) -> int:
         count += 1
 
     return count
+
+# --- ADK Integration ---
+try:
+    from google.adk.agents import LlmAgent
+
+    def _build_adk_agents():
+        adk_dict = {}
+        # 1. Create sub-agents
+        for identity in SERVICE_AGENTS:
+            if identity.agent_id == "asgard-agent":
+                continue
+            
+            adk_dict[identity.agent_id] = LlmAgent(
+                name=identity.persona_name,
+                model="gemini-2.5-flash",
+                description=identity.persona_description,
+                instruction=(
+                    f"Role: {identity.persona_role}\n"
+                    f"Capabilities: {', '.join(identity.capabilities)}\n"
+                    f"Constraints: {', '.join(identity.constraints)}\n"
+                    f"Knowledge Domains: {', '.join(identity.knowledge_domains)}"
+                )
+            )
+        
+        # 2. Create Asgard as the Root Orchestrator
+        asgard_id = next(a for a in SERVICE_AGENTS if a.agent_id == "asgard-agent")
+        asgard_root = LlmAgent(
+            name=asgard_id.persona_name,
+            model="gemini-2.5-flash",
+            description=asgard_id.persona_description,
+            instruction=(
+                "You are Asgard, the master Platform Orchestrator.\n"
+                f"Role: {asgard_id.persona_role}\n"
+                "You coordinate the workflow of 11 expert sub-agents to fulfill any user request.\n"
+                f"Constraints: {', '.join(asgard_id.constraints)}"
+            ),
+            sub_agents=list(adk_dict.values())
+        )
+        return asgard_root, adk_dict
+
+    asgard_root_agent, ADK_SUB_AGENTS = _build_adk_agents()
+except ImportError:
+    asgard_root_agent = None
+    ADK_SUB_AGENTS = {}
