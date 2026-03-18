@@ -2,7 +2,7 @@
 
 import json
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sse_starlette.sse import EventSourceResponse
 
 from bifrost.clients.heimdall import HeimdallClient
@@ -20,12 +20,31 @@ _session_mgr = SessionManager()
 
 
 class RunRequest(BaseModel):
-    """Request body for agent execution."""
-    input: str
+    """Request body for agent execution.
+
+    Accepts two formats:
+    1. Classic: {"input": "hello"}
+    2. OpenAI-compatible: {"messages": [{"role": "user", "content": "hello"}]}
+    """
+    input: str | None = None
+    messages: list[dict] | None = None
     session_id: str | None = None
     system_prompt: str | None = None
     model: str | None = None
     temperature: float = 0.7
+
+    @model_validator(mode="after")
+    def extract_input_from_messages(self):
+        """Extract input from messages array if input not provided."""
+        if self.input is None and self.messages:
+            # Find last user message
+            for msg in reversed(self.messages):
+                if msg.get("role") == "user" and msg.get("content"):
+                    self.input = msg["content"]
+                    break
+        if not self.input:
+            raise ValueError("Either 'input' or 'messages' with a user message is required")
+        return self
 
 
 @router.get("")

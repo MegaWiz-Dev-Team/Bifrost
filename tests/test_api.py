@@ -75,13 +75,14 @@ class TestToolEndpoints:
 
 
 class TestAgentEndpoints:
-    def test_run_requires_input(self, client):
+    def test_run_requires_input_or_messages(self, client):
+        """Empty body with neither input nor messages should fail."""
         response = client.post("/v1/agents/test/run", json={})
-        assert response.status_code == 422  # Validation error — input required
+        assert response.status_code == 422  # Validation error — no input
 
     @patch("bifrost.api.agents._heimdall")
-    def test_run_simple_response(self, mock_heimdall, client):
-        """Test agent run with a simple LLM response (no tool calls)."""
+    def test_run_with_input_format(self, mock_heimdall, client):
+        """Test agent run with classic input string format."""
         mock_heimdall.chat_completion = AsyncMock(return_value={
             "choices": [{
                 "message": {"content": "สวัสดีครับ! ผมคือ Bifrost"},
@@ -98,3 +99,47 @@ class TestAgentEndpoints:
         assert data["agent_id"] == "test"
         assert data["session_id"] is not None
         assert data["total_iterations"] == 1
+
+    @patch("bifrost.api.agents._heimdall")
+    def test_run_with_messages_format(self, mock_heimdall, client):
+        """TDD RED: Agent run should accept OpenAI messages array format.
+        Forseti Run #4, Scenario B07: got 422 want 200|502|503
+        """
+        mock_heimdall.chat_completion = AsyncMock(return_value={
+            "choices": [{
+                "message": {"content": "Hello! I'm Bifrost agent."},
+                "finish_reason": "stop",
+            }]
+        })
+
+        response = client.post("/v1/agents/default/run", json={
+            "messages": [
+                {"role": "user", "content": "Hello, what tools do you have?"}
+            ]
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["output"] is not None
+        assert data["session_id"] is not None
+
+    @patch("bifrost.api.agents._heimdall")
+    def test_run_messages_extracts_last_user_content(self, mock_heimdall, client):
+        """TDD RED: messages format should extract last user message as input."""
+        mock_heimdall.chat_completion = AsyncMock(return_value={
+            "choices": [{
+                "message": {"content": "I can help with that!"},
+                "finish_reason": "stop",
+            }]
+        })
+
+        response = client.post("/v1/agents/default/run", json={
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "First question"},
+                {"role": "assistant", "content": "First answer"},
+                {"role": "user", "content": "Second question"},
+            ]
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["output"] is not None
