@@ -17,8 +17,13 @@ from bifrost.core.service_agents import SERVICE_AGENTS
 
 logger = logging.getLogger("bifrost.odin")
 
-# Keyword → agent routing table
+# Keyword → agent routing table (ORDER MATTERS — specific keywords first)
 ROUTING_TABLE: dict[str, str] = {
+    # Medical gateway — must be before generic 'query'
+    "fhir": "eir-agent", "hl7": "eir-agent",
+    # Clinical — must be before generic keywords
+    "patient": "fenrir-agent", "ผู้ป่วย": "fenrir-agent", "clinical": "fenrir-agent",
+    "vitals": "fenrir-agent", "openemr": "fenrir-agent",
     # Security
     "scan": "huginn-agent", "vulnerability": "huginn-agent", "security": "huginn-agent",
     "สแกน": "huginn-agent", "ช่องโหว่": "huginn-agent",
@@ -28,21 +33,16 @@ ROUTING_TABLE: dict[str, str] = {
     "test": "forseti-agent", "ทดสอบ": "forseti-agent", "e2e": "forseti-agent",
     # Browser
     "browse": "ratatoskr-agent", "screenshot": "ratatoskr-agent",
-    # Clinical
-    "patient": "fenrir-agent", "ผู้ป่วย": "fenrir-agent", "clinical": "fenrir-agent",
-    "vitals": "fenrir-agent", "openemr": "fenrir-agent",
-    # Knowledge
-    "knowledge": "mimir-agent", "query": "mimir-agent", "ค้นหา": "mimir-agent",
-    # LLM
-    "model": "heimdall-agent", "llm": "heimdall-agent",
-    # Auth
+    # Auth — must be before generic 'token'
     "auth": "yggdrasil-agent", "token": "yggdrasil-agent", "login": "yggdrasil-agent",
-    # Medical gateway
-    "fhir": "eir-agent", "hl7": "eir-agent",
     # Infra
     "container": "vardr-agent", "docker": "vardr-agent", "restart": "vardr-agent",
     # Deploy
     "deploy": "asgard-agent", "platform": "asgard-agent",
+    # LLM
+    "model": "heimdall-agent", "llm": "heimdall-agent",
+    # Knowledge — generic 'query' last
+    "knowledge": "mimir-agent", "query": "mimir-agent", "ค้นหา": "mimir-agent",
 }
 
 
