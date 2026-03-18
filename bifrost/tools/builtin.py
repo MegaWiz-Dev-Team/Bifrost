@@ -131,7 +131,9 @@ class HttpRequestTool(Tool):
 def register_builtin_tools():
     """Register all built-in tools in the global registry."""
     from bifrost.tools.registry import registry
+    from bifrost.tools.browse import BrowseWebTool
 
     registry.register(GetCurrentTimeTool())
     registry.register(CalculateTool())
     registry.register(HttpRequestTool())
+    registry.register(BrowseWebTool())

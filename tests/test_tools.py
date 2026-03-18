@@ -1,6 +1,7 @@
 """Tests for Bifrost tools and registry (TDD)."""
 
 import pytest
+import httpx
 from bifrost.tools.builtin import GetCurrentTimeTool, CalculateTool, HttpRequestTool
 from bifrost.tools.registry import ToolRegistry
 
@@ -121,3 +122,108 @@ class TestToolRegistry:
         assert len(reg) == 0
         reg.register(CalculateTool())
         assert len(reg) == 1
+
+
+# === BrowseWebTool Tests (TDD RED) ===
+
+class TestBrowseWebTool:
+    """Tests for BrowseWebTool — calls Ratatoskr shared browser service."""
+
+    @pytest.fixture
+    def tool(self):
+        from bifrost.tools.browse import BrowseWebTool
+        return BrowseWebTool(ratatoskr_url="http://localhost:9200")
+
+    def test_has_correct_name(self, tool):
+        assert tool.name == "browse_web"
+
+    def test_has_description(self, tool):
+        assert "browse" in tool.description.lower() or "web" in tool.description.lower()
+
+    def test_openai_schema(self, tool):
+        schema = tool.to_openai_schema()
+        assert schema["type"] == "function"
+        assert schema["function"]["name"] == "browse_web"
+        props = schema["function"]["parameters"]["properties"]
+        assert "url" in props
+        assert "url" in schema["function"]["parameters"]["required"]
+
+    def test_openai_schema_has_extract_text(self, tool):
+        props = tool.to_openai_schema()["function"]["parameters"]["properties"]
+        assert "extract_text" in props
+
+    @pytest.mark.asyncio
+    async def test_execute_returns_text(self, tool, httpx_mock):
+        """Tool should call Ratatoskr /api/v1/scrape and return text content."""
+        httpx_mock.add_response(
+            url="http://localhost:9200/api/v1/scrape",
+            json={
+                "url": "https://example.com",
+                "html": "<html><body>Hello</body></html>",
+                "text": "Hello World",
+                "title": "Example",
+            },
+        )
+        result = await tool.execute(url="https://example.com")
+        assert "Hello World" in result
+        assert "Example" in result
+
+    @pytest.mark.asyncio
+    async def test_execute_with_extract_text_false(self, tool, httpx_mock):
+        """When extract_text=false, should still return title + truncated HTML."""
+        httpx_mock.add_response(
+            url="http://localhost:9200/api/v1/scrape",
+            json={
+                "url": "https://example.com",
+                "html": "<html><body>Content</body></html>",
+                "text": None,
+                "title": "My Page",
+            },
+        )
+        result = await tool.execute(url="https://example.com", extract_text=False)
+        assert "My Page" in result
+
+    @pytest.mark.asyncio
+    async def test_execute_truncates_large_content(self, tool, httpx_mock):
+        """Large text content should be truncated."""
+        long_text = "x" * 10000
+        httpx_mock.add_response(
+            url="http://localhost:9200/api/v1/scrape",
+            json={
+                "url": "https://example.com",
+                "html": "<html></html>",
+                "text": long_text,
+                "title": "Big Page",
+            },
+        )
+        result = await tool.execute(url="https://example.com")
+        assert len(result) < 10000
+        assert "truncated" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_handles_ratatoskr_error(self, tool, httpx_mock):
+        """Should return error message when Ratatoskr is unavailable."""
+        httpx_mock.add_response(
+            url="http://localhost:9200/api/v1/scrape",
+            status_code=500,
+            text="Internal Server Error",
+        )
+        result = await tool.execute(url="https://example.com")
+        assert "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_handles_connection_error(self, tool, httpx_mock):
+        """Should handle connection refused gracefully."""
+        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+        result = await tool.execute(url="https://example.com")
+        assert "error" in result.lower()
+
+    def test_registered_in_builtin(self):
+        """BrowseWebTool should be registered when register_builtin_tools is called."""
+        from bifrost.tools.registry import ToolRegistry
+        from bifrost.tools.browse import BrowseWebTool
+
+        reg = ToolRegistry()
+        tool = BrowseWebTool()
+        reg.register(tool)
+        assert "browse_web" in reg
