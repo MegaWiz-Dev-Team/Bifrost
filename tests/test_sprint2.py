@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from bifrost.clients.mcp import MCPServerConfig, MCPClient, MCPTool, MCPManager
-from bifrost.tools.mimir import SearchKnowledgeTool, ListSourcesTool, GetDocumentTool
+from bifrost.core.mcp_adapter import MCPToolAdapter
 from bifrost.tools.webhook import WebhookTool
 from bifrost.core.agents import AgentConfig, AgentStore
 
@@ -61,49 +61,51 @@ class TestMCPManager:
         assert mgr.get_client("nonexistent") is None
 
 
-# === Mimir Tools Tests ===
+class TestMCPAdapterToolCreation:
+    """Test MCP adapter creates equivalent tools to legacy mimir classes."""
 
-class TestSearchKnowledgeTool:
-    def test_schema(self):
-        tool = SearchKnowledgeTool("http://localhost:3000")
-        assert tool.name == "search_knowledge"
-        assert "query" in tool.parameters["properties"]
+    def test_search_knowledge_tool_created(self):
+        """Adapter should create a search_knowledge callable from MCP schema."""
+        adapter = MCPToolAdapter(server_url="http://localhost:3000/mcp/sse")
+        schema = {
+            "name": "search_knowledge",
+            "description": "Search knowledge base",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        }
+        func = adapter._convert_tool(schema)
+        assert func.__name__ == "search_knowledge"
+        assert callable(func)
 
-    def test_openai_schema(self):
-        tool = SearchKnowledgeTool("http://localhost:3000")
-        schema = tool.to_openai_schema()
-        assert schema["function"]["name"] == "search_knowledge"
+    def test_list_sources_tool_created(self):
+        """Adapter should create a list_sources callable from MCP schema."""
+        adapter = MCPToolAdapter(server_url="http://localhost:3000/mcp/sse")
+        schema = {
+            "name": "list_sources",
+            "description": "List sources",
+            "inputSchema": {"type": "object", "properties": {}},
+        }
+        func = adapter._convert_tool(schema)
+        assert func.__name__ == "list_sources"
 
-    @pytest.mark.asyncio
-    async def test_search_http_error(self):
-        tool = SearchKnowledgeTool("http://invalid-host:999")
-        result = await tool.execute(query="test query")
-        assert "error" in result.lower() or "Error" in result
-
-
-class TestListSourcesTool:
-    def test_schema(self):
-        tool = ListSourcesTool("http://localhost:3000")
-        assert tool.name == "list_sources"
-
-    @pytest.mark.asyncio
-    async def test_list_http_error(self):
-        tool = ListSourcesTool("http://invalid-host:999")
-        result = await tool.execute()
-        assert "error" in result.lower() or "Error" in result
-
-
-class TestGetDocumentTool:
-    def test_schema(self):
-        tool = GetDocumentTool("http://localhost:3000")
-        assert tool.name == "get_document"
-        assert "chunk_id" in tool.parameters["properties"]
-
-    @pytest.mark.asyncio
-    async def test_missing_chunk_id(self):
-        tool = GetDocumentTool("http://localhost:3000")
-        result = await tool.execute()
-        assert "required" in result.lower() or "Error" in result
+    def test_get_document_tool_created(self):
+        """Adapter should create get_document_chunk callable from MCP schema."""
+        adapter = MCPToolAdapter(server_url="http://localhost:3000/mcp/sse")
+        schema = {
+            "name": "get_document_chunk",
+            "description": "Get document chunk",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"chunk_id": {"type": "integer"}},
+                "required": ["chunk_id"],
+            },
+        }
+        func = adapter._convert_tool(schema)
+        assert func.__name__ == "get_document_chunk"
+        assert func.__annotations__.get("chunk_id") == int
 
 
 # === Webhook Tool Tests ===

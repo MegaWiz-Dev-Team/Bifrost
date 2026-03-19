@@ -234,20 +234,13 @@ class TestToolRegistration:
             assert "parameters" in schema["function"]
             assert schema["function"]["parameters"]["type"] == "object"
 
-    def test_combined_registry_total(self):
-        """Verify Mimir (3) + Eir (3) = 6 tools in registry."""
-        from bifrost.tools.mimir import register_mimir_tools
-
+    def test_eir_registry_total(self):
+        """Verify Eir registers 3 tools (Mimir tools now come via MCP dynamically)."""
         registry = ToolRegistry()
         with patch("bifrost.tools.registry.registry", registry):
-            register_mimir_tools("http://localhost:3000")
             register_eir_tools("http://localhost:8300")
 
-        assert len(registry) == 6
-        # Mimir tools
-        assert "search_knowledge" in registry
-        assert "list_sources" in registry
-        assert "get_document" in registry
+        assert len(registry) == 3
         # Eir tools
         assert "eir_patient_search" in registry
         assert "eir_fhir_query" in registry

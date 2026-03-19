@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from bifrost.config import settings
 from bifrost.db.connection import get_db, close_db
 from bifrost.tools.builtin import register_builtin_tools
-from bifrost.tools.mimir import register_mimir_tools
+from bifrost.core.mcp_adapter import create_mcp_adk_tools
 from bifrost.tools.eir import register_eir_tools
 from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.core.router import router as agent_router
@@ -41,10 +41,13 @@ async def lifespan(app: FastAPI):
     register_builtin_tools()
     logger.info(f"📦 Registered {len(tools.registry)} built-in tools")
 
-    # Register Mimir RAG tools
-    if settings.mimir_url:
-        register_mimir_tools(settings.mimir_url, settings.mimir_api_key, settings.mimir_tenant_id)
-        logger.info(f"🧠 Mimir tools registered ({settings.mimir_url})")
+    # Discover Mimir tools via MCP (replaces legacy static registration)
+    if settings.mimir_mcp_url:
+        try:
+            mimir_tools = await create_mcp_adk_tools(settings.mimir_mcp_url, "mimir")
+            logger.info(f"🧠 Mimir MCP: {len(mimir_tools)} tools discovered ({settings.mimir_mcp_url})")
+        except Exception as e:
+            logger.warning(f"🧠 Mimir MCP discovery failed (non-fatal): {e}")
 
     # Register Eir Gateway tools
     if settings.eir_url:

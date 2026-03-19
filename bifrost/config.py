@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     # Mimir connection
     mimir_url: str = Field(default="http://localhost:3000", description="Mimir API URL")
     mimir_api_key: str = Field(default="", description="Mimir API key")
-    mimir_tenant_id: str = Field(default="default", description="Mimir tenant ID")
+    mimir_tenant_id: str = Field(default="default", description="Mimir tenant ID (legacy, prefer dynamic injection)")
+    mimir_mcp_url: str = Field(default="http://localhost:3000/mcp/sse", description="Mimir MCP SSE endpoint for tool discovery")
     mimir_sync_enabled: bool = Field(default=False, description="Enable periodic agent sync from Mimir")
     mimir_sync_interval: int = Field(default=300, description="Agent sync interval in seconds")
 
