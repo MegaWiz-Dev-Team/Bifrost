@@ -1,5 +1,21 @@
 # Release Notes — Bifrost
 
+## v0.8.0 — MCP Orchestrator Upgrade (2026-03-19)
+
+### ✨ New Features
+- **MCP-ADK Adapter** (`bifrost/core/mcp_adapter.py`) — dynamic bridge that converts MCP JSON-RPC tool schemas into ADK-callable async functions at startup
+- **Auto-discovery** — connects to Mimir MCP SSE endpoint, discovers tools via `tools/list`, no hardcoded tool definitions
+- **Dynamic X-Tenant-ID** — per-request tenant isolation extracted from ADK `tool_context.state`, preventing cross-tenant data leakage
+- New config: `MIMIR_MCP_URL` (default: `http://localhost:3000/mcp/sse`)
+
+### 🗑️ Removed
+- **Legacy `bifrost/tools/mimir.py`** (171 lines) — `SearchKnowledgeTool`, `ListSourcesTool`, `GetDocumentTool` class-based tools replaced by dynamic MCP discovery
+
+### 📊 Stats
+- **18 new TDD tests** (Red→Green), **216 total passing** (0.63s)
+- Sprint 32 complete — Closes #4, #5, #6, #7
+- ISO 29110 PM-02-32
+
 ## v0.7.0 — Mimir Agent Sync (2026-03-15)
 
 ### ✨ New Features

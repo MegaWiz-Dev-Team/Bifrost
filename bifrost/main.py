@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from bifrost.config import settings
 from bifrost.db.connection import get_db, close_db
 from bifrost.tools.builtin import register_builtin_tools
-from bifrost.tools.mimir import register_mimir_tools
+from bifrost.core.mcp_adapter import create_mcp_adk_tools
 from bifrost.tools.eir import register_eir_tools
 from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.core.router import router as agent_router
@@ -41,10 +41,13 @@ async def lifespan(app: FastAPI):
     register_builtin_tools()
     logger.info(f"📦 Registered {len(tools.registry)} built-in tools")
 
-    # Register Mimir RAG tools
-    if settings.mimir_url:
-        register_mimir_tools(settings.mimir_url, settings.mimir_api_key, settings.mimir_tenant_id)
-        logger.info(f"🧠 Mimir tools registered ({settings.mimir_url})")
+    # Discover Mimir tools via MCP (replaces legacy static registration)
+    if settings.mimir_mcp_url:
+        try:
+            mimir_tools = await create_mcp_adk_tools(settings.mimir_mcp_url, "mimir")
+            logger.info(f"🧠 Mimir MCP: {len(mimir_tools)} tools discovered ({settings.mimir_mcp_url})")
+        except Exception as e:
+            logger.warning(f"🧠 Mimir MCP discovery failed (non-fatal): {e}")
 
     # Register Eir Gateway tools
     if settings.eir_url:
@@ -80,7 +83,8 @@ async def lifespan(app: FastAPI):
             "Respond in the same language as the user."
         ),
     ))
-    logger.info(f"🤖 {len(agent_store)} agent(s) configured")
+    
+    logger.info(f"🤖 {len(agent_store)} agent(s) configured in legacy store")
 
     logger.info(f"🛡️ Heimdall: {settings.heimdall_url}")
     logger.info(f"🗄️ Database: {settings.database_path}")
@@ -126,11 +130,24 @@ app.include_router(a2a.router)
 app.include_router(traces.router)
 app.include_router(guardrails.router)
 
-# Odin orchestrator routes
-from bifrost.api.odin import router as odin_router
-app.include_router(odin_router)
+# Asgard ADK orchestrator routes
+import os
 
-
+try:
+    from google.adk.cli.fast_api import get_fast_api_app
+    AGENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
+    adk_app = get_fast_api_app(
+        agents_dir=AGENT_DIR,
+        web=True,
+        a2a=False,
+    )
+    for middleware in adk_app.user_middleware:
+        if middleware.cls.__name__ == "CORSMiddleware":
+            adk_app.user_middleware.remove(middleware)
+    app.mount("/v1/adk", adk_app)
+    logger.info("mounted ADK app at /v1/adk")
+except ImportError:
+    logger.warning("google-adk not installed. Skipped ADK mount.")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
