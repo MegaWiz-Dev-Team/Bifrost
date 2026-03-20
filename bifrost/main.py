@@ -4,6 +4,7 @@ FastAPI application entry point.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -109,10 +110,16 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
+# CORS — restrict to trusted origins (fixes CWE-942 / Huginn finding #9)
+_cors_origins = [
+    os.getenv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
+    "http://localhost:8400",  # Huginn
+    "http://localhost:8500",  # Muninn
+    "http://localhost:8600",  # Forseti
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,8 +138,6 @@ app.include_router(traces.router)
 app.include_router(guardrails.router)
 
 # Asgard ADK orchestrator routes
-import os
-
 try:
     from google.adk.cli.fast_api import get_fast_api_app
     AGENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
