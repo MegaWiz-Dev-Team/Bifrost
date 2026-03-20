@@ -2,8 +2,8 @@
 
 **Product:** ⚡ Bifrost (Agent Runtime Engine)
 **Document ID:** SI-RPT-BIFROST-001
-**Version:** 0.1.0
-**Date:** 2026-03-18
+**Version:** 0.2.0
+**Date:** 2026-03-21
 **Standard:** ISO/IEC 29110 — SI Process
 **Stack:** 🐍 Python (FastAPI)
 
@@ -16,7 +16,7 @@
 | **Repository** | MegaWiz-Dev-Team/Bifrost |
 | **Port** | `:8100` |
 | **Container** | `asgard_bifrost` |
-| **Dependencies** | Heimdall (LLM), Mimir (Knowledge) |
+| **Dependencies** | Heimdall (LLM), Mimir (Knowledge), Odin (dashboard) |
 
 ---
 
@@ -47,7 +47,8 @@ flowchart TB
 | FR-B04 | Agent execution with timeout | ✅ Done |
 | FR-B05 | Multi-agent orchestration | ✅ Done |
 | FR-B06 | AI Guardrails (PII, content filter) | ✅ Done |
-| FR-B07 | Self-aware agent system | 📋 Planned (Sprint Plan) |
+| FR-B07 | Security: CORS hardening (CWE-942) | ✅ Done (S32) |
+| FR-B08 | Self-aware agent system | 📋 Planned |
 
 ## 4. API Endpoints
 
@@ -69,8 +70,18 @@ flowchart TB
 | `DEFAULT_MODEL` | `qwen3.5` | Default LLM model |
 | `MAX_ITERATIONS` | `10` | Agent max iterations |
 | `MAX_EXECUTION_TIME` | `120` | Timeout (secs) |
+| `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | CORS allowed origin (S32 security fix) |
+
+## 6. Security Fixes (S32)
+
+| ID | Finding | Severity | Fix | PR | Status |
+|:--|:--|:--|:--|:--|:--|
+| RA-001 | CORS wildcard `allow_origins=["*"]` (CWE-942) | 🟠 HIGH | Explicit allow-list + `CORS_ALLOWED_ORIGIN` env var | [#10](https://github.com/MegaWiz-Dev-Team/Bifrost/pull/10) | ✅ Fixed |
+
+**Pipeline**: Huginn scan → Muninn analysis → Odin approved → Draft PR → 216 tests pass → Squash merged
 
 ---
 
 *บันทึกโดย: AI Assistant (ISO/IEC 29110 SI Process)*
-*Created: 2026-03-18 by Antigravity*
+*Created: 2026-03-18 | Updated: 2026-03-21 by Antigravity*
+*S32: CORS wildcard fix (CWE-942) via Odin pipeline*
