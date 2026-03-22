@@ -73,6 +73,38 @@ async def lifespan(app: FastAPI):
             logger.warning(f"🐺 Fenrir MCP connection failed (non-fatal): {e}")
             _mcp_manager = None
 
+    # Discover Yggdrasil MCP Sidecar tools (Go → validate_token, get_user_roles)
+    yggdrasil_mcp_tools = []
+    if settings.yggdrasil_mcp_enabled and settings.yggdrasil_mcp_url:
+        try:
+            yggdrasil_mcp_tools = await create_mcp_adk_tools(
+                settings.yggdrasil_mcp_url, "yggdrasil-mcp"
+            )
+            logger.info(
+                f"🌳 Yggdrasil MCP Sidecar: {len(yggdrasil_mcp_tools)} tools "
+                f"discovered ({settings.yggdrasil_mcp_url})"
+            )
+        except Exception as e:
+            logger.warning(f"🌳 Yggdrasil MCP Sidecar discovery failed (non-fatal): {e}")
+
+    # Discover Eir MCP Sidecar tools (Go → get_patient_medical_history, book_appointment)
+    eir_mcp_tools = []
+    if settings.eir_mcp_enabled and settings.eir_mcp_url:
+        try:
+            eir_mcp_tools = await create_mcp_adk_tools(
+                settings.eir_mcp_url, "eir-mcp"
+            )
+            logger.info(
+                f"🏥 Eir MCP Sidecar: {len(eir_mcp_tools)} tools "
+                f"discovered ({settings.eir_mcp_url})"
+            )
+        except Exception as e:
+            logger.warning(f"🏥 Eir MCP Sidecar discovery failed (non-fatal): {e}")
+
+    # Store discovered MCP tools for ADK agent injection
+    app.state.yggdrasil_mcp_tools = yggdrasil_mcp_tools
+    app.state.eir_mcp_tools = eir_mcp_tools
+
     # Set up default agent
     agent_store.add(AgentConfig(
         id="default",

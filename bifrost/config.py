@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     fenrir_url: str = Field(default="http://localhost:8200", description="Fenrir MCP Server URL")
     fenrir_enabled: bool = Field(default=True, description="Enable Fenrir MCP connection")
 
+    # Yggdrasil MCP Sidecar (Go — validate_token, get_user_roles)
+    yggdrasil_mcp_url: str = Field(default="http://localhost:8090/rpc", description="Yggdrasil MCP Sidecar JSON-RPC endpoint")
+    yggdrasil_mcp_enabled: bool = Field(default=True, description="Enable Yggdrasil MCP sidecar connection")
+
+    # Eir MCP Sidecar (Go — get_patient_medical_history, book_appointment)
+    eir_mcp_url: str = Field(default="http://localhost:8091/rpc", description="Eir MCP Sidecar JSON-RPC endpoint")
+    eir_mcp_enabled: bool = Field(default=True, description="Enable Eir MCP sidecar connection")
+
     # Authentication (Yggdrasil)
     auth_enabled: bool = Field(default=True, description="Enable JWT authentication")
     yggdrasil_issuer: str = Field(default="http://localhost:8085", description="Yggdrasil issuer URL for JWKS")
