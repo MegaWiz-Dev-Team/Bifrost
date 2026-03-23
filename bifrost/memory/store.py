@@ -66,7 +66,7 @@ class MemoryStore:
         """
         if categories:
             placeholders = ",".join("?" for _ in categories)
-            cursor = await self.db.execute(
+            cursor = await self.db.execute(  # nosemgrep: sqlalchemy-execute-raw-query
                 f"""SELECT id, tenant_id, category, content, source, confidence,
                        created_at, updated_at
                 FROM memory_facts
