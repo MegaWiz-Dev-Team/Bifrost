@@ -3,6 +3,8 @@
 The heart of Bifrost: think → tool_call → observe → loop until final answer.
 """
 
+from __future__ import annotations
+
 import json
 import time
 import logging
@@ -53,11 +55,51 @@ class AgentExecutor:
         tool_registry: ToolRegistry,
         max_iterations: int = 10,
         max_execution_time: int = 120,
+        skills_loader: "SkillsLoader | None" = None,
+        skills_dirs: list[str] | None = None,
+        memory_store: "MemoryStore | None" = None,
+        tenant_id: str = "default",
     ):
         self.heimdall = heimdall
         self.tool_registry = tool_registry
         self.max_iterations = max_iterations
         self.max_execution_time = max_execution_time
+        self.skills_loader = skills_loader
+        self.skills_dirs = skills_dirs or []
+        self.memory_store = memory_store
+        self.tenant_id = tenant_id
+        # Pre-scan skills once at init (not per-request)
+        self._all_skills: list = []
+        if self.skills_loader and self.skills_dirs:
+            self._all_skills = self.skills_loader.scan(self.skills_dirs)
+            logger.info(f"Skills loaded: {len(self._all_skills)} skills from {len(self.skills_dirs)} dirs")
+
+    def _augment_with_skills(self, system_prompt: str, user_input: str) -> str:
+        """Inject relevant skills into the system prompt (progressive loading)."""
+        if not self.skills_loader or not self._all_skills:
+            return system_prompt
+
+        relevant = self.skills_loader.get_relevant_skills(user_input, self._all_skills)
+        if not relevant:
+            return system_prompt
+
+        skills_block = self.skills_loader.format_skills_prompt(relevant)
+        logger.info(f"Injecting {len(relevant)} skills: {[s.name for s in relevant]}")
+        return f"{system_prompt}\n\n{skills_block}"
+
+    async def _augment_with_memory(self, system_prompt: str) -> str:
+        """Inject top facts from long-term memory into the system prompt."""
+        if not self.memory_store:
+            return system_prompt
+
+        from bifrost.memory.store import MemoryStore
+        facts = await self.memory_store.get_facts(self.tenant_id, limit=15)
+        if not facts:
+            return system_prompt
+
+        memory_block = MemoryStore.format_memory_prompt(facts)
+        logger.info(f"Injecting {len(facts)} memory facts for tenant {self.tenant_id}")
+        return f"{system_prompt}\n\n{memory_block}"
 
     async def execute(
         self,
@@ -83,8 +125,13 @@ class AgentExecutor:
         trace: list[TraceStep] = []
         tools_schema = self.tool_registry.get_openai_tools()
 
+        # Augment system prompt with memory (persistent facts)
+        augmented_prompt = await self._augment_with_memory(system_prompt)
+        # Augment system prompt with relevant skills (progressive loading)
+        augmented_prompt = self._augment_with_skills(augmented_prompt, user_input)
+
         # Build initial messages
-        messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        messages: list[dict] = [{"role": "system", "content": augmented_prompt}]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_input})

@@ -31,6 +31,20 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
+
+CREATE TABLE IF NOT EXISTS memory_facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    category TEXT NOT NULL CHECK(category IN ('fact', 'context', 'medical', 'preference')),
+    content TEXT NOT NULL,
+    source TEXT DEFAULT '',
+    confidence REAL DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_facts_tenant ON memory_facts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_facts_category ON memory_facts(tenant_id, category);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_dedup ON memory_facts(tenant_id, content);
 """
 
 

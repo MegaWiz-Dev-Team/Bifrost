@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # Default LLM Model (must match Heimdall backend model ID)
     default_model: str = Field(default="mlx-community/Qwen3.5-9B-MLX-4bit", description="Default model name via Heimdall")
 
+    # Skills System
+    skills_dir: str = Field(default="skills/", description="Base directory for skills (public/ and custom/ subdirs)")
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
