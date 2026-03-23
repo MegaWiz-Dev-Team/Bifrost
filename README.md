@@ -24,6 +24,7 @@ Mimir's Agent Builder lets users create agents (system prompt, model, temperatur
 - Execute multi-step reasoning (ReAct loop)
 - Search the RAG knowledge base autonomously
 - Maintain long-term memory across sessions
+- Learn and apply specialized skills
 - Delegate to other agents
 
 ### Solution
@@ -98,9 +99,46 @@ Tools exposed via **MCP protocol** — Bifrost acts as MCP client calling MCP se
 | **Short-term** | Per conversation | SQLite | Session lifetime |
 | **Long-term** | Per user/agent | SQLite | Configurable (30d) |
 
-### 4. Agent Router — Multi-agent delegation and handoff
+### 4. Skills System *(Sprint 35)*
 
-### 5. Execution Tracing — Structured trace logs for every agent run
+DeerFlow-compatible `SKILL.md` format with progressive loading — agents only receive skills relevant to the current task.
+
+```
+Agent receives: "scan code for security vulnerabilities"
+  → Skills loader matches: security-audit
+  → Injects <skills> block into system prompt
+  → Other skills (medical, deployment, etc.) are NOT loaded
+```
+
+5 built-in skills: `medical-research`, `patient-summary`, `iso-doc-generator`, `security-audit`, `deployment`
+
+### 5. Long-Term Memory *(Sprint 35)*
+
+Per-tenant persistent memory across sessions. LLM extracts facts from conversations, deduplicates, and stores in SQLite.
+
+| Category | Example |
+|:--|:--|
+| `fact` | "User is a cardiologist." |
+| `context` | "Works at Siriraj Hospital." |
+| `medical` | "Patient has diabetes type 2." |
+| `preference` | "Prefers Thai language responses." |
+
+Top 15 facts injected as `<memory>` block in system prompt.
+
+### 6. Context Engineering *(Sprint 35)*
+
+Automatic context window management with configurable triggers:
+
+| Trigger | Default | Action |
+|:--|:--|:--|
+| Message count | > 20 messages | Summarize older messages |
+| Token estimate | > 6,000 tokens | Summarize older messages |
+
+Recent messages kept verbatim, older ones summarized via LLM.
+
+### 7. Agent Router — Multi-agent delegation and handoff
+
+### 8. Execution Tracing — Structured trace logs for every agent run
 
 ---
 
@@ -127,14 +165,16 @@ bifrost/
 ├── Dockerfile
 ├── bifrost/
 │   ├── main.py                 # FastAPI entry point
-│   ├── config.py               # Settings
+│   ├── config.py               # Settings (incl. skills_dir)
 │   ├── api/                    # Routes: agents, sessions, tools, health
-│   ├── core/                   # Executor, router, context, streaming
+│   ├── core/                   # Executor (ReAct + skills + memory injection)
 │   ├── tools/                  # Registry, base class, built-in tools
-│   ├── memory/                 # Session + memory bank
+│   ├── skills/                 # SKILL.md parser + progressive loader
+│   ├── memory/                 # Session + long-term facts (per-tenant)
+│   ├── context/                # Summarizer + compression middleware
 │   ├── clients/                # Heimdall + Mimir clients
-│   └── db/                     # SQLite connection + migrations
-├── tests/
+│   └── db/                     # SQLite connection + schema
+├── tests/                      # 146 tests (TDD)
 └── scripts/
 ```
 
@@ -167,10 +207,11 @@ uvicorn bifrost.main:app --host 0.0.0.0 --port 8100 --reload
 ## Roadmap
 
 - [x] Project structure & setup
-- [ ] **Phase 1**: Agent Executor, built-in tools, session management
-- [ ] **Phase 2**: MCP integration, webhook tools, code sandbox
-- [ ] **Phase 3**: Multi-agent routing, metrics, A2A protocol
-- [ ] **Phase 4**: Plan-and-Execute strategy, self-reflection
+- [x] **Phase 1**: Agent Executor, built-in tools, session management
+- [x] **Phase 2**: MCP integration, guardrails, A2A protocol
+- [x] **Phase 3**: Skills system, long-term memory, context engineering *(Sprint 35)*
+- [ ] **Phase 4**: Multi-agent orchestration (Odin), sandbox execution *(Sprint 36)*
+- [ ] **Phase 5**: K3s deployment, CI/CD, observability *(Sprint 37)*
 
 ---
 
