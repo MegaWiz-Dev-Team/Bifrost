@@ -17,7 +17,7 @@ from bifrost.core.mcp_adapter import create_mcp_adk_tools
 from bifrost.tools.eir import register_eir_tools
 from bifrost.core.agents import agent_store, AgentConfig
 from bifrost.core.router import router as agent_router
-from bifrost.api import health, tools, agents, a2a, traces, guardrails
+from bifrost.api import health, tools, agents, a2a, traces, guardrails, odin
 
 
 # Configure logging
@@ -168,6 +168,7 @@ app.include_router(agents.router)
 app.include_router(a2a.router)
 app.include_router(traces.router)
 app.include_router(guardrails.router)
+app.include_router(odin.router)
 
 # Asgard ADK orchestrator routes
 try:
