@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     yggdrasil_mcp_url: str = Field(default="http://localhost:8090/rpc", description="Yggdrasil MCP Sidecar JSON-RPC endpoint")
     yggdrasil_mcp_enabled: bool = Field(default=True, description="Enable Yggdrasil MCP sidecar connection")
 
-    # Eir MCP Sidecar (Go — get_patient_medical_history, book_appointment)
-    eir_mcp_url: str = Field(default="http://localhost:8091/rpc", description="Eir MCP Sidecar JSON-RPC endpoint")
-    eir_mcp_enabled: bool = Field(default=True, description="Enable Eir MCP sidecar connection")
+    # Eir MCP Server (PHP — search_patients, get_patient_summary, create_encounter, get_sleep_reports)
+    eir_mcp_url: str = Field(default="http://localhost:8300/api/mcp", description="Eir MCP Server JSON-RPC endpoint")
+    eir_mcp_enabled: bool = Field(default=True, description="Enable Eir MCP server connection")
 
     # Authentication (Yggdrasil)
     auth_enabled: bool = Field(default=True, description="Enable JWT authentication")
