@@ -46,89 +46,60 @@ class MCPToolAdapter:
         self._server_url = server_url.rstrip("/")
         self._server_name = server_name
 
-    def _convert_tool(self, tool_schema: dict) -> Callable:
-        """Convert a single MCP tool schema to an ADK-callable async function.
+    def _convert_tool(self, tool_schema: dict) -> Any:
+        from bifrost.tools.base import Tool
 
-        Args:
-            tool_schema: A tool definition from MCP `tools/list` response.
+        class BifrostMCPTool(Tool):
+            def __init__(self, adapter: "MCPToolAdapter", schema: dict):
+                self.name = schema.get("name", "unknown_tool")
+                self.description = schema.get("description", "")
+                self.parameters = schema.get("inputSchema", {})
+                self._adapter = adapter
 
-        Returns:
-            An async function with proper __name__, __doc__, and type annotations.
-        """
-        tool_name = tool_schema.get("name", "unknown_tool")
-        tool_desc = tool_schema.get("description", "")
-        input_schema = tool_schema.get("inputSchema", {})
-        properties = input_schema.get("properties", {})
-        required = set(input_schema.get("required", []))
+            async def execute(self, **kwargs: Any) -> str:
+                # Extract tool_context if provided
+                kwargs.pop("tool_context", None)
+                tenant_id = "default"
 
-        # Build type annotations from JSON Schema properties
-        annotations: dict[str, type] = {}
-        for prop_name, prop_def in properties.items():
-            json_type = prop_def.get("type", "string")
-            py_type = _JSON_TYPE_MAP.get(json_type, str)
-            annotations[prop_name] = py_type
+                jsonrpc_request = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": self.name,
+                        "arguments": kwargs,
+                    },
+                }
 
-        # Capture adapter reference for the closure
-        server_url = self._server_url
-        server_name = self._server_name
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Tenant-ID": tenant_id,
+                    "X-User-Role": "doctor",
+                }
 
-        async def tool_func(**kwargs: Any) -> str:
-            """Dynamically generated MCP tool wrapper."""
-            # Extract tool_context if provided (ADK injects this)
-            tool_context = kwargs.pop("tool_context", None)
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(
+                            self._adapter._server_url,
+                            json=jsonrpc_request,
+                            headers=headers,
+                        )
+                        response.raise_for_status()
+                        data = response.json()
 
-            # Resolve tenant_id from ADK session context
-            tenant_id = "default"
-            if tool_context is not None:
-                state = getattr(tool_context, "state", None)
-                if state and isinstance(state, dict):
-                    tenant_id = state.get("tenant_id", "default")
+                        if "error" in data:
+                            error_msg = data["error"].get("message", "Unknown MCP error")
+                            return f"MCP Error: {error_msg}"
 
-            # Build JSON-RPC request
-            jsonrpc_request = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": kwargs,
-                },
-            }
+                        content = data.get("result", {}).get("content", [])
+                        return "\n".join(c.get("text", str(c)) for c in content)
+                except Exception as e:
+                    return f"MCP request error: {e}"
 
-            headers = {
-                "Content-Type": "application/json",
-                "X-Tenant-ID": tenant_id,
-            }
+        return BifrostMCPTool(self, tool_schema)
 
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        server_url,
-                        json=jsonrpc_request,
-                        headers=headers,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-
-                    if "error" in data:
-                        error_msg = data["error"].get("message", "Unknown MCP error")
-                        return f"MCP Error: {error_msg}"
-
-                    content = data.get("result", {}).get("content", [])
-                    return "\n".join(c.get("text", str(c)) for c in content)
-
-            except httpx.HTTPError as e:
-                return f"MCP request error: {e}"
-
-        # Set function metadata for ADK introspection
-        tool_func.__name__ = tool_name
-        tool_func.__qualname__ = tool_name
-        tool_func.__doc__ = tool_desc
-        tool_func.__annotations__ = {**annotations, "return": str}
-
-        return tool_func
-
-    async def discover_tools(self) -> list[Callable]:
+    async def discover_tools(self) -> list[Any]:
         """Connect to MCP server, list tools, and convert to ADK callables.
 
         Returns:
@@ -157,7 +128,7 @@ class MCPToolAdapter:
                     func = self._convert_tool(tool_schema)
                     converted.append(func)
                     logger.info(
-                        f"MCP tool discovered: {func.__name__} "
+                        f"MCP tool discovered: {func.name} "
                         f"(from {self._server_name})"
                     )
                 return converted
@@ -173,7 +144,7 @@ class MCPToolAdapter:
 async def create_mcp_adk_tools(
     server_url: str,
     server_name: str = "mcp",
-) -> list[Callable]:
+) -> list[Any]:
     """One-shot convenience: connect to MCP server, discover, and return ADK tools.
 
     Args:

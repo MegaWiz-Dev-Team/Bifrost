@@ -27,6 +27,7 @@ class RunRequest(BaseModel):
     2. OpenAI-compatible: {"messages": [{"role": "user", "content": "hello"}]}
     """
     input: str | None = None
+    message: str | None = None
     messages: list[dict] | None = None
     session_id: str | None = None
     system_prompt: str | None = None
@@ -35,15 +36,18 @@ class RunRequest(BaseModel):
 
     @model_validator(mode="after")
     def extract_input_from_messages(self):
-        """Extract input from messages array if input not provided."""
-        if self.input is None and self.messages:
-            # Find last user message
-            for msg in reversed(self.messages):
-                if msg.get("role") == "user" and msg.get("content"):
-                    self.input = msg["content"]
-                    break
+        """Extract input from messages array or message field if input not provided."""
+        if self.input is None:
+            if self.message:
+                self.input = self.message
+            elif self.messages:
+                # Find last user message
+                for msg in reversed(self.messages):
+                    if msg.get("role") == "user" and msg.get("content"):
+                        self.input = msg["content"]
+                        break
         if not self.input:
-            raise ValueError("Either 'input' or 'messages' with a user message is required")
+            raise ValueError("Either 'input', 'message', or 'messages' with a user message is required")
         return self
 
 

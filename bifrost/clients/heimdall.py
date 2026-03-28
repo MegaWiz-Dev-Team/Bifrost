@@ -105,7 +105,7 @@ class HeimdallClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        response = await client.post("/v1/chat/completions", json=payload)
+        response = await client.post("chat/completions", json=payload)
         response.raise_for_status()
         return response.json()
 
@@ -131,7 +131,7 @@ class HeimdallClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+        async with client.stream("POST", "chat/completions", json=payload) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
@@ -147,7 +147,7 @@ class HeimdallClient:
         """Check if Heimdall is reachable."""
         try:
             client = await self._get_client()
-            response = await client.get("/v1/models")
+            response = await client.get("models")
             return response.status_code == 200
         except (httpx.HTTPError, httpx.ConnectError):
             return False

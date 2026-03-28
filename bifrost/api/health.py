@@ -8,12 +8,14 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/healthz")
+@router.get("/v1/healthz")
 async def healthz():
     """Liveness probe — always returns 200."""
     return {"status": "ok", "service": "bifrost", "version": "0.1.0"}
 
 
 @router.get("/readyz")
+@router.get("/v1/readyz")
 async def readyz():
     """Readiness probe — checks Heimdall connectivity."""
     client = HeimdallClient()

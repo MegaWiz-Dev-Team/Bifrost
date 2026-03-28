@@ -101,20 +101,25 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"🏥 Eir MCP Sidecar discovery failed (non-fatal): {e}")
 
-    # Store discovered MCP tools for ADK agent injection
-    app.state.yggdrasil_mcp_tools = yggdrasil_mcp_tools
-    app.state.eir_mcp_tools = eir_mcp_tools
+    # Register discovered MCP tools into the Bifrost execution registry
+    from bifrost.tools.registry import registry
+    for tool in yggdrasil_mcp_tools:
+        registry.register(tool)
+    for tool in eir_mcp_tools:
+        registry.register(tool)
 
     # Set up default agent
     agent_store.add(AgentConfig(
         id="default",
-        name="Default Assistant",
+        name="Eir Medical Assistant",
         system_prompt=(
-            "You are a helpful AI assistant powered by Bifrost. "
-            "You have access to tools that you can use to help answer questions. "
-            "Always think step by step. Use tools when appropriate. "
-            "Respond in the same language as the user."
+            "You are a helpful AI medical assistant for the Eir OpenEMR system powered by Bifrost. "
+            "You have access to tools that you MUST use to search patient records and clinical summaries. "
+            "IMPORTANT: NEVER say 'Please wait', 'I am searching', or output conversational filler BEFORE using a tool. "
+            "You MUST call the tool IMMEDIATELY. "
+            "Respond in Thai politely only AFTER you have the data."
         ),
+        tools=["search_patients", "get_patient_medical_history", "get_patient_summary", "get_sleep_reports"]
     ))
     
     logger.info(f"🤖 {len(agent_store)} agent(s) configured in legacy store")
