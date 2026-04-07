@@ -1,5 +1,8 @@
 # Bifrost: Gap Analysis & Sprint Planning (ADK + Mimir Hybrid RAG)
 
+> [!WARNING]
+> **Deprecated:** This document was written when Bifrost was architected as a Python application using `google-adk`. The platform has since been completely rewritten in Rust (`bifrost-rs`) using `axum`, `tokio`, and `memvid-core`. This document is kept for historical purposes only.
+
 หลังจากการย้าย Bifrost ไปใช้เฟรมเวิร์ก `google-adk` และเตรียมตัวรองรับสถาปัตยกรรม Hybrid RAG Search ของ Mimir พบว่ายังมีช่องโหว่ (Gap) หรือ Tech Debt ในโค้ดปัจจุบันที่ต้องจัดการดังนี้ครับ:
 
 ## 🚨 1. Gap Analysis (ส่วนที่ขาดหายไปใน Bifrost)

@@ -41,102 +41,69 @@ Mimir (Agent Builder) → deploys to → Bifrost (Agent Runtime) → calls → H
 
 ## Architecture
 
-```
-                         ┌─────────────────────────┐
-                         │      Bifrost Server      │
-                         │      (FastAPI/Uvicorn)    │
-                         └────────────┬────────────┘
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-              │                       │                       │
-     ┌────────▼────────┐    ┌────────▼────────┐    ┌────────▼────────┐
-     │  Agent Executor  │    │  Tool Registry   │    │ Session Manager │
-     │                  │    │                  │    │                 │
-     │ • ReAct loop     │    │ • Built-in tools │    │ • Short-term    │
-     │ • Plan-Execute   │    │ • MCP tools      │    │   (conversation)│
-     │ • Max iterations │    │ • Custom tools   │    │ • Long-term     │
-     │ • Error recovery │    │ • JSON Schema    │    │   (memory bank) │
-     └─────────────────┘    └─────────────────┘    └─────────────────┘
-              │                       │
-     ┌────────▼────────┐    ┌────────▼────────┐
-     │  Agent Router    │    │  Event Logger    │
-     │  • Multi-agent   │    │  • Execution     │
-     │  • Handoff       │    │    trace         │
-     └─────────────────┘    └─────────────────┘
+Bifrost is now built entirely on **Rust** and **Axum** for high concurrency and deterministic memory management, replacing the legacy Python/FastAPI architecture.
+
+```mermaid
+graph TB
+    subgraph Bifrost["⚡ Bifrost Runtime (Rust/Axum)"]
+        direction TB
+        
+        API["REST API (Port 8100)"]
+        
+        subgraph Engine["Rig-Core Engine"]
+            Overseer["Overseer (Router Agent)"]
+            Tools["Tool Registry"]
+            MemoryManager["MemvidManager (Souls)"]
+        end
+        
+        API --> Engine
+        Overseer --> Tools
+        Overseer --> MemoryManager
+    end
+
+    subgraph Mimir["🧠 Mimir App Layer"]
+        Dashboard["Agent Studio UI"]
+        Pipeline["RAG Pipeline"]
+    end
+
+    subgraph Storage["Persistent Layer"]
+        Qdrant["Qdrant (Vector)"]
+        Neo4j["Neo4j (Graph)"]
+        Memvid["🚀 Memvid (.mv2 Files)"]
+    end
+
+    Dashboard -->|POST /v1/agents/{id}/run| API
+    Tools --> Qdrant
+    Tools --> Neo4j
+    MemoryManager --> Memvid
 ```
 
 ---
 
-## Core Features
+## Core Operational Flow
 
-### 1. Agent Executor (ReAct Loop)
+### 1. Request Intake & Initiation
+When a user interacts with an Agent via Mimir's Agent Studio, the request is proxied to Bifrost on port `8100`. Bifrost receives the input query, tenant context, and session ID.
 
-```
-User Input → Build Context → Call LLM (via Heimdall)
-                               ├─ tool_call? → Execute Tool → Loop back
-                               └─ final answer? → Return to user
-```
+### 2. Context Loading (The Soul)
+Instead of relying on centralized MariaDB schemas for agent memory, Bifrost integrates **memvid-core**. Each agent is assigned an independent, flat-file database (`.mv2` format) inside `data/agents/`. The `MemvidManager` unlocks this file instantly, scanning for previous interactions, preferences, or factual memories specific to the session.
 
-- **OpenAI-compatible function calling** format
-- Configurable `max_iterations` (default: 10) and `max_execution_time` (120s)
-- Streaming via SSE
-- Graceful error recovery
+### 3. Execution Engine (ReAct / Swarm)
+Using `rig-core`, Bifrost encapsulates the LLM interaction loop. The Overseer Agent builds a ReAct (Reason + Act) loop. If it determines a query requires external context, it will halt generation and invoke one of its registered tools:
+- `VectorSearchTool`: Runs semantic + BM25 hybrid search over Qdrant.
+- `GraphSearchTool`: Pulls structured entity paths from Neo4j.
+- `MemvidSearchTool`: Retrieves personal agent lore from its `.mv2` capsule.
 
-### 2. Tool Registry (MCP + Custom)
+### 4. Synthesis & Response
+After satisfying the query context, the LLM generates a final response natively typed through Rust's `serde` validation to guarantee conformity to the `SwarmResponse` schema. The memory layer then commits the new "Smart Frame" to disk, and the result is returned to the user instantly.
 
-Tools exposed via **MCP protocol** — Bifrost acts as MCP client calling MCP servers:
+---
 
-| MCP Server | Tools |
-|:--|:--|
-| **mimir-mcp** | `search_knowledge`, `list_sources`, `get_document` |
-| **fenrir-mcp** | `browser_navigate`, `fill_form`, `screenshot`, `run_shell` |
-| **Built-in** | `get_current_time`, `calculate`, `http_request` |
-
-### 3. Session Manager
-
-| Type | Scope | Storage | TTL |
-|:--|:--|:--|:--|
-| **Short-term** | Per conversation | SQLite | Session lifetime |
-| **Long-term** | Per user/agent | SQLite | Configurable (30d) |
-
-### 4. Skills System *(Sprint 35)*
-
-DeerFlow-compatible `SKILL.md` format with progressive loading — agents only receive skills relevant to the current task.
-
-```
-Agent receives: "scan code for security vulnerabilities"
-  → Skills loader matches: security-audit
-  → Injects <skills> block into system prompt
-  → Other skills (medical, deployment, etc.) are NOT loaded
-```
-
-5 built-in skills: `medical-research`, `patient-summary`, `iso-doc-generator`, `security-audit`, `deployment`
-
-### 5. Long-Term Memory *(Sprint 35)*
-
-Per-tenant persistent memory across sessions. LLM extracts facts from conversations, deduplicates, and stores in SQLite.
-
-| Category | Example |
-|:--|:--|
-| `fact` | "User is a cardiologist." |
-| `context` | "Works at Siriraj Hospital." |
-| `medical` | "Patient has diabetes type 2." |
-| `preference` | "Prefers Thai language responses." |
-
-Top 15 facts injected as `<memory>` block in system prompt.
-
-### 6. Context Engineering *(Sprint 35)*
-
-Automatic context window management with configurable triggers:
-
-| Trigger | Default | Action |
-|:--|:--|:--|
-| Message count | > 20 messages | Summarize older messages |
-| Token estimate | > 6,000 tokens | Summarize older messages |
-
-Recent messages kept verbatim, older ones summarized via LLM.
-
-### 7. Agent Router — Multi-agent delegation and handoff
+## Why Rust?
+Bifrost migrated from Python to Rust alongside `mimir-core-ai` to unify the ecosystem. Rust provides:
+- **Zero-Cost Abstractions**: Allowing high concurrency loops (thousands of agents) without the Python GIL.
+- **Microsecond Memory Queries**: Integrating `memvid` directly allows sub-millisecond memory fetches.
+- **Memory Safety**: Ensuring complex agent recursive behavior does not leak or OOM out Kubernetes pods.
 
 ### 8. Execution Tracing — Structured trace logs for every agent run
 
@@ -146,12 +113,12 @@ Recent messages kept verbatim, older ones summarized via LLM.
 
 | Layer | Technology | Rationale |
 |:--|:--|:--|
-| **Runtime** | Python 3.11+ | Rich AI/agent ecosystem |
-| **Framework** | FastAPI + Uvicorn | Async, fast, OpenAPI docs |
-| **Database** | SQLite (aiosqlite) | Consistent with Mimir |
-| **LLM Client** | httpx (async) | Calls Heimdall API |
-| **MCP Client** | mcp SDK | Connects to MCP tool servers |
-| **Serialization** | Pydantic v2 | Type safety |
+| **Runtime** | Rust 1.85+ | High performance, memory safety, no GIL |
+| **Framework** | Axum + Tokio | Native Async, low-latency API |
+| **Database** | Memvid (`.mv2`) + SQLite | Portable agent memory, ultra-fast local retrieval |
+| **LLM Client** | rig-core | Leading Rust agentic orchestration framework |
+| **MCP Client** | mcp SDK (Rust) | Connects to MCP tool servers |
+| **Serialization** | Serde | Type safety and speed |
 
 ---
 
@@ -160,21 +127,17 @@ Recent messages kept verbatim, older ones summarized via LLM.
 ```
 bifrost/
 ├── README.md
-├── pyproject.toml
+├── Cargo.toml                  # Rust dependencies
 ├── .env.example
 ├── Dockerfile
-├── bifrost/
-│   ├── main.py                 # FastAPI entry point
-│   ├── config.py               # Settings (incl. skills_dir)
+├── src/
+│   ├── main.rs                 # Axum entry point
 │   ├── api/                    # Routes: agents, sessions, tools, health
-│   ├── core/                   # Executor (ReAct + skills + memory injection)
-│   ├── tools/                  # Registry, base class, built-in tools
-│   ├── skills/                 # SKILL.md parser + progressive loader
-│   ├── memory/                 # Session + long-term facts (per-tenant)
+│   ├── swarm_engine/           # Executor (rig-core + skills + memory injection)
+│   ├── memory/                 # Memvid (.mv2) integration + SQLite
 │   ├── context/                # Summarizer + compression middleware
-│   ├── clients/                # Heimdall + Mimir clients
-│   └── db/                     # SQLite connection + schema
-├── tests/                      # 146 tests (TDD)
+│   └── clients/                # Heimdall + Mimir (mimir-core-ai)
+├── tests/                      # Rust integration tests
 └── scripts/
 ```
 
@@ -196,10 +159,9 @@ bifrost/
 ```bash
 git clone https://github.com/MegaWiz-Dev-Team/Bifrost.git
 cd Bifrost
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
 cp .env.example .env
-uvicorn bifrost.main:app --host 0.0.0.0 --port 8100 --reload
+cargo build --release
+cargo run --bin bifrost-rs
 ```
 
 ---

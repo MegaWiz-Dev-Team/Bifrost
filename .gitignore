@@ -9,3 +9,6 @@ data/
 *.egg-info/
 dist/
 build/
+/target/
+.bifrost_python_backup/
+*.mv2
