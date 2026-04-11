@@ -16,13 +16,13 @@ impl MemvidManager {
         Self { base_path: path }
     }
 
-    fn get_agent_path(&self, agent_id: &str) -> PathBuf {
-        self.base_path.join(format!("agent_{}.mv2", agent_id))
+    fn get_agent_path(&self, agent_id: &str, session_id: &str) -> PathBuf {
+        self.base_path.join(format!("agent_{}_session_{}.mv2", agent_id, session_id))
     }
 
     /// Appends a new conversation frame or fact into the agent's memory
-    pub fn commit_memory(&self, agent_id: &str, content: &str, title: Option<&str>) -> Result<()> {
-        let path = self.get_agent_path(agent_id);
+    pub fn commit_memory(&self, agent_id: &str, session_id: &str, content: &str, title: Option<&str>) -> Result<()> {
+        let path = self.get_agent_path(agent_id, session_id);
         let path_str = path.to_string_lossy().to_string();
         
         let mut mem = if path.exists() {
@@ -40,13 +40,13 @@ impl MemvidManager {
         mem.put_bytes_with_options(content.as_bytes(), opts)?;
         mem.commit()?;
 
-        info!("Committed memory frame to agent {} (.mv2)", agent_id);
+        info!("Committed memory frame to agent {} session {} (.mv2)", agent_id, session_id);
         Ok(())
     }
 
     /// Searches the agent's memory for context
-    pub fn search_memory(&self, agent_id: &str, query: &str, top_k: usize) -> Result<SearchResponse> {
-        let path = self.get_agent_path(agent_id);
+    pub fn search_memory(&self, agent_id: &str, session_id: &str, query: &str, top_k: usize) -> Result<SearchResponse> {
+        let path = self.get_agent_path(agent_id, session_id);
         if !path.exists() {
             // Return empty response if no memory file
             return Ok(SearchResponse {

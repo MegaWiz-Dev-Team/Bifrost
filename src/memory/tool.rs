@@ -13,11 +13,12 @@ pub struct MemvidSearchArgs {
 pub struct MemvidSearchTool {
     manager: Arc<MemvidManager>,
     agent_id: String,
+    session_id: String,
 }
 
 impl MemvidSearchTool {
-    pub fn new(manager: Arc<MemvidManager>, agent_id: String) -> Self {
-        Self { manager, agent_id }
+    pub fn new(manager: Arc<MemvidManager>, agent_id: String, session_id: String) -> Self {
+        Self { manager, agent_id, session_id }
     }
 }
 
@@ -38,9 +39,9 @@ impl Tool for MemvidSearchTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        info!("Memvid tool invoked by agent {} with query: {}", self.agent_id, args.query);
+        info!("Memvid tool invoked by agent {} session {} with query: {}", self.agent_id, self.session_id, args.query);
         
-        let resp = self.manager.search_memory(&self.agent_id, &args.query, 5)
+        let resp = self.manager.search_memory(&self.agent_id, &self.session_id, &args.query, 5)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         
         if resp.hits.is_empty() {

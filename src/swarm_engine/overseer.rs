@@ -94,6 +94,7 @@ impl OverseerManager {
         let memvid_tool = MemvidSearchTool::new(
             self.memvid.clone(),
             tenant_id.to_string(), // In this context, tenant = soul isolation
+            session_id.unwrap_or("anon").to_string(),
         );
 
         let overseer_agent = client
@@ -230,7 +231,7 @@ impl OverseerManager {
         let frame_content = format!("User Query: {}\nAgent Response: {}", query, answer.final_answer);
         let title = format!("Conversation {} at {}", session_id.unwrap_or("anon"), chrono::Utc::now().to_rfc3339());
         
-        if let Err(e) = self.memvid.commit_memory(tenant_id, &frame_content, Some(&title)) {
+        if let Err(e) = self.memvid.commit_memory(tenant_id, session_id.unwrap_or("anon"), &frame_content, Some(&title)) {
             tracing::error!("Memvid failed to commit frame to deep memory: {}", e);
         }
 

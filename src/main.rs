@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/healthz", get(|| async { "OK" }))
-        .route("/v1/agents/:agent_id/run", post(run_agent))
+        .route("/v1/agents/{agent_id}/run", post(run_agent))
         .with_state(state);
 
     let addr = "0.0.0.0:8100";
