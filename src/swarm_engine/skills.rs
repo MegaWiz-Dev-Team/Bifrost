@@ -27,7 +27,9 @@ pub struct VectorSearchTool {
     #[allow(dead_code)]
     router: Arc<LlmRouter>,
     embedding_model: String,
-    collection: String,
+    collections: Vec<String>,
+    limit: usize,
+    alpha: f64,
 }
 
 impl VectorSearchTool {
@@ -36,14 +38,18 @@ impl VectorSearchTool {
         qdrant: Arc<QdrantService>,
         router: Arc<LlmRouter>,
         embedding_model: String,
-        collection: String,
+        collections: Vec<String>,
+        limit: usize,
+        alpha: f64,
     ) -> Self {
         Self {
             db_pool,
             qdrant,
             router,
             embedding_model,
-            collection,
+            collections,
+            limit,
+            alpha,
         }
     }
 }
@@ -73,24 +79,45 @@ impl Tool for VectorSearchTool {
         let _db_pool = self.db_pool.clone();
         let qdrant = self.qdrant.clone();
         let embedding_model = self.embedding_model.clone();
-        let collection = self.collection.clone();
+        let collections = self.collections.clone();
         let tenant_id = args.tenant_id.clone();
         let query = args.query.clone();
 
-        let results = tokio::spawn(async move {
-            let retriever = QdrantRetriever::new(
-                (*qdrant).clone(),
-                embedding_model,
-                collection,
-            );
-            VectorRetriever::search(&retriever, &query, &tenant_id, 5).await
-        })
-        .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        .map_err(|e: String| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let mut all_results = Vec::new();
+        let mut handles = Vec::new();
+
+        let limit = self.limit;
+        let alpha = self.alpha;
+
+        for collection in collections {
+            let qdrant_clone = qdrant.clone();
+            let embed_clone = embedding_model.clone();
+            let tenant_clone = tenant_id.clone();
+            let query_clone = query.clone();
+
+            let handle = tokio::spawn(async move {
+                let retriever = QdrantRetriever::new(
+                    (*qdrant_clone).clone(),
+                    embed_clone,
+                    collection,
+                );
+                retriever.search_filtered(&query_clone, &tenant_clone, limit, None, alpha).await
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            if let Ok(Ok(results)) = handle.await {
+                all_results.extend(results);
+            }
+        }
+
+        all_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Truncate based on total requested limit across all collections
+        all_results.truncate(limit);
 
         let mut output = String::new();
-        for res in results {
+        for res in all_results {
             output.push_str(&format!("- [{}] {}\n", res.title, res.content));
         }
         

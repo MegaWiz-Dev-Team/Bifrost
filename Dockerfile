@@ -21,6 +21,7 @@ RUN mkdir -p Bifrost/src \
     && echo "fn main() {println!(\"Dummy cache target\");}" > Bifrost/src/main.rs
 
 WORKDIR /app/Bifrost
+ENV SQLX_OFFLINE=true
 RUN cargo build --release \
     && rm -rf src/main.rs target/release/deps/bifrost*
 
@@ -30,6 +31,7 @@ COPY Bifrost/src ./Bifrost/src
 
 # Build the real application binary
 WORKDIR /app/Bifrost
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # -------------------------
