@@ -2,7 +2,7 @@
 
 Tests: cross-tenant query, service graph, webhook registration.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_cross_service.py -v
+Run: python -m pytest tests/test_cross_service.py -v
 """
 
 import pytest

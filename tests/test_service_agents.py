@@ -2,7 +2,7 @@
 
 Tests: 12 agent definitions, self-awareness tools, API intro, model routing, prompt cache.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_service_agents.py -v
+Run: python -m pytest tests/test_service_agents.py -v
 """
 
 import pytest

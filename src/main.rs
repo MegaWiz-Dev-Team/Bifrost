@@ -52,13 +52,15 @@ async fn run_agent(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Start OpenTelemetry OTLP Pipeline
+    // Start OpenTelemetry OTLP Pipeline (endpoint configurable via OTEL_EXPORTER_OTLP_ENDPOINT)
+    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:4317".to_string());
     let tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(
             opentelemetry_otlp::new_exporter()
                 .tonic()
-                .with_endpoint("http://otel-collector.infra.svc:4317"), // Point to our K3s OTel Sidecar/DaemonSet
+                .with_endpoint(otel_endpoint),
         )
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .expect("Failed to initialize OTLP Tracer");

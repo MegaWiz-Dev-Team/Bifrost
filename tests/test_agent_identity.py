@@ -2,7 +2,7 @@
 
 Tests identity model, system prompt builder, store persistence, and CRUD API.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_agent_identity.py -v
+Run: python -m pytest tests/test_agent_identity.py -v
 """
 
 import json

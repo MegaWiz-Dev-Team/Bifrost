@@ -12,13 +12,11 @@
 | ⚡ Bifrost | **This repo** |
 | 🐺 Fenrir | [Computer Use Agent](https://github.com/MegaWiz-Dev-Team/Fenrir) |
 
-### 🏥 Role in Multi-Agent Ecosystem
+### Role in the Multi-Agent Ecosystem
 
-> **Orchestrator (หัวหน้าทีม)** — Bifrost รับคำถามจากแพทย์ วิเคราะห์เจตนา มอบหมายงานให้ Agent เฉพาะทาง แล้วประกอบคำตอบส่งกลับ
+> **Orchestrator** — Bifrost receives a user request, classifies intent, delegates to specialised tool/agent workers, and assembles the final response.
 >
 > **Guardrails:** G3 (Scope Guard, Tool Allowlist) • G5 (Citation Check, Confidence Gate, Disclaimer)
->
-> 📖 [Full Architecture →](https://github.com/MegaWiz-Dev-Team/Asgard/blob/main/docs/roadmap/MultiAgent_Architecture_Plan.md) | [Sprint Plan →](https://github.com/MegaWiz-Dev-Team/Asgard/blob/main/docs/roadmap/MultiAgent_Sprint_Plan.md)
 
 ---
 

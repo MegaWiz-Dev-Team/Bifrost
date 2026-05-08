@@ -1,11 +1,12 @@
 import os
 import sys
 
-# Add Developer to path so we can import bifrost
-sys.path.insert(0, "/Users/mimir/Developer/Bifrost")
+# Run from the Bifrost repo root so the package import resolves.
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_ROOT)
 from bifrost.core.service_agents import SERVICE_AGENTS
 
-base_dir = "/Users/mimir/Developer/Bifrost/bifrost/agents"
+base_dir = os.path.join(PROJECT_ROOT, "bifrost", "agents")
 os.makedirs(base_dir, exist_ok=True)
 with open(os.path.join(base_dir, "__init__.py"), "w") as f:
     pass

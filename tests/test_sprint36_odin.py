@@ -4,7 +4,7 @@ Tests: models, registry, task decomposition, sub-agent spawning,
        timeout enforcement, result synthesis, Sprint 35 integration,
        error handling, API endpoints.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_sprint36_odin.py -v
+Run: python -m pytest tests/test_sprint36_odin.py -v
 """
 
 import asyncio

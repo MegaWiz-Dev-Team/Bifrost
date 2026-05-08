@@ -2,7 +2,7 @@
 
 Tests: routing, standup, delegation chain, loop safety, permissions, API endpoints.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_odin.py -v
+Run: python -m pytest tests/test_odin.py -v
 """
 
 import pytest

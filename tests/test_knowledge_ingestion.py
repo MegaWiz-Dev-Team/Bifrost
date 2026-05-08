@@ -2,7 +2,7 @@
 
 Tests: tenant provisioning, doc ingestion, query, auto-provision, batch ingest.
 
-Run: cd /Users/mimir/Developer/Bifrost && python -m pytest tests/test_knowledge_ingestion.py -v
+Run: python -m pytest tests/test_knowledge_ingestion.py -v
 """
 
 import pytest
