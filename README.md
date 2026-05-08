@@ -1,5 +1,10 @@
 # ⚡ Bifrost — Agent Runtime Engine
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Built with Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-yellow.svg)](https://www.python.org/)
+[![Part of Asgard](https://img.shields.io/badge/part%20of-Asgard%20AI%20Platform-purple.svg)](https://github.com/MegaWiz-Dev-Team/Asgard)
+
 > *"The burning rainbow bridge that connects the realms"*
 >
 > Bifrost is a self-hosted Agent Runtime Engine for deploying, executing, and managing AI agents with tool-use capabilities. Part of the [🏰 Asgard AI Platform](https://github.com/MegaWiz-Dev-Team/Asgard).
