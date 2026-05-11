@@ -1,5 +1,30 @@
 # Release Notes — Bifrost
 
+> Versioning note: 0.1.0 → 0.3.0 below tracks the **Rust rewrite** (the current production binary, `Cargo.toml`). The v0.4.0 – v0.8.0 entries further down are historical for the pre-rewrite Python codebase and are kept for archeological context only.
+
+## v0.3.0 (Rust) — Sprint 50 Transparent OCR (2026-05-11)
+
+> Image-bearing chat now does OCR before the agent ever sees the message. Path A (transparent) — the agent reads the extracted text inside the prompt and doesn't need to call `ocr_extract` explicitly.
+
+### ✨ New
+- **Transparent OCR preprocess** (B-50d, PR #13) — `RunAgentRequest` gains optional `image_base64` + `image_filename` + `doc_type`. When present, Bifrost POSTs to Syn's `/api/v1/syn/ocr/extract-json` before entering the swarm and prepends the extracted text in an explicit `[Attached Document — extracted via <engine> (audit_id=...)]` marker block. Backwards-compatible — text-only clients still work.
+- **Policy mapping** — 402 → `{error: budget_exceeded}`, 403 → `{error: phi_strict}`, transport/engine_failed → 502 `{error: ocr_failed}`. Engine failures are **not** silently swallowed: if the user attached an image, they want OCR to work.
+- **OTel span** — `preprocess_image` is `#[instrument]`-decorated; the OCR call appears as its own span under the swarm trace in Laminar (Sága), with tenant_id, audit_id, engine_used, cost_usd, latency_ms.
+
+### ⚙️ Config
+- `SYN_API_URL` — default `http://syn-api.asgard.svc:8080`.
+
+### 🧪 Tests
+- 3 unit tests pass: `format_block_includes_engine_and_audit`, `ocr_request_serializes_minimal_fields`, `ocr_request_serializes_full_fields`.
+
+### 🗺️ Companion PRs
+- Mimir #265 — Path A delegation (the receiving end of the smart-router)
+- Mimir #270 — `/playground` upload UI (alternative to transparent path; gives the user an editable OCR preview before send)
+
+## v0.2.0 (Rust) — Sprint 38 / Asgard v1.2-alpha (2026-04-22)
+
+Initial public release of the Rust rewrite — swarm engine + RAG retrieval + memvid memory, integrated with Heimdall gateway + Mimir RAG. Bumped per Asgard umbrella to align with the 14-service Sprint 38 release.
+
 ## v0.8.0 — MCP Orchestrator Upgrade (2026-03-19)
 
 ### ✨ New Features
