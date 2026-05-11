@@ -27,6 +27,17 @@ struct AppState {
 struct RunAgentRequest {
     query: String,
     session_id: Option<String>,
+    /// B-50d transparent OCR path. Base64-encoded image (no `data:` prefix).
+    /// When present, Bifrost OCRs via Syn before entering the swarm and
+    /// prepends extracted text to the query.
+    #[serde(default)]
+    image_base64: Option<String>,
+    #[serde(default)]
+    image_filename: Option<String>,
+    /// Optional smart-router hint forwarded to Syn (`handwriting` |
+    /// `printed_thai` | `mixed`).
+    #[serde(default)]
+    doc_type: Option<String>,
 }
 
 async fn run_agent(
@@ -41,7 +52,64 @@ async fn run_agent(
         .unwrap_or("default")
         .to_string();
 
-    match state.overseer.run_swarm(&tenant_id, &agent_id, &payload.query, payload.session_id.as_deref()).await {
+    // B-50d — if an image is attached, run OCR before the swarm. The
+    // extracted text is prepended to the user's query inside a marker block
+    // so the LLM can distinguish document content from typed words.
+    let effective_query = if let Some(image_b64) = payload.image_base64.as_deref() {
+        let syn_base = std::env::var("SYN_API_URL")
+            .unwrap_or_else(|_| "http://syn-api.asgard.svc:8080".to_string());
+        let opts = swarm_engine::ocr_preprocess::OcrPreprocessOpts {
+            filename: payload.image_filename.clone(),
+            doc_type: payload.doc_type.clone(),
+            hint_lang: None,
+            high_stakes: false,
+        };
+        match swarm_engine::ocr_preprocess::preprocess_image(
+            &syn_base, &tenant_id, image_b64, &opts,
+        ).await {
+            Ok(ocr) => {
+                let text = ocr.extracted_text.unwrap_or_default();
+                let block = swarm_engine::ocr_preprocess::format_ocr_block(
+                    &text, &ocr.engine_used, &ocr.audit_id,
+                );
+                format!("{}{}", block, payload.query)
+            }
+            Err(swarm_engine::ocr_preprocess::OcrPreprocessError::PhiStrict { detail }) => {
+                return (
+                    axum::http::StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "error": "phi_strict",
+                        "detail": detail,
+                    }))
+                ).into_response();
+            }
+            Err(swarm_engine::ocr_preprocess::OcrPreprocessError::BudgetExceeded { detail }) => {
+                return (
+                    axum::http::StatusCode::PAYMENT_REQUIRED,
+                    axum::Json(serde_json::json!({
+                        "error": "budget_exceeded",
+                        "detail": detail,
+                    }))
+                ).into_response();
+            }
+            Err(e) => {
+                // Engine failure or transport error — surface to caller so
+                // the user can re-try / re-upload. Don't silently drop the
+                // image and proceed text-only.
+                return (
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    axum::Json(serde_json::json!({
+                        "error": "ocr_failed",
+                        "detail": e.to_string(),
+                    }))
+                ).into_response();
+            }
+        }
+    } else {
+        payload.query.clone()
+    };
+
+    match state.overseer.run_swarm(&tenant_id, &agent_id, &effective_query, payload.session_id.as_deref()).await {
         Ok(response) => (axum::http::StatusCode::OK, axum::Json(response)).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
