@@ -279,3 +279,182 @@ impl Tool for TreeSearchTool {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// 4. OCR Extract Tool (Sprint 51 — wires agent_configs.tools allowlist to Syn)
+// -----------------------------------------------------------------------------
+//
+// Surfaces Syn's `/api/v1/syn/ocr/extract-json` through Hermodr's MCP
+// JSON-RPC. Calling path:
+//
+//   Agent (Bifrost) → OcrExtractTool::call → POST hermodr-syn /rpc
+//   → hermodr-syn (UPSTREAM=syn-api) → syn-api /extract-json
+//   → smart-router → engine (PaddleOCR / Typhoon / Gemini Flash / Pro)
+//
+// All policy enforcement (phi_strict, cloud-tier opt-in, budget) lives
+// downstream in syn-api; this tool is pure transport. Audit row gets
+// written by syn-api into `ocr_documents`.
+//
+// Activation: agent_configs.tools JSON array contains "ocr_extract".
+// Sprint 50 B-50g seeded this for eir, eir-cardio, eir-sleep, eir-ent,
+// eir-pediatrics via sprint50_eir_ocr_allowlist.sql.
+//
+// Sibling to the transparent OCR path in `ocr_preprocess.rs`. That path
+// auto-runs on any image-bearing chat without the agent ever seeing the
+// tool. This tool is for the explicit case — when the agent reasons
+// about a document and decides on its own that it needs OCR.
+
+#[derive(Deserialize, Serialize)]
+pub struct OcrExtractArgs {
+    pub image_base64: String,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub doc_type: Option<String>,
+    #[serde(default)]
+    pub hint_lang: Option<String>,
+    #[serde(default)]
+    pub high_stakes: Option<bool>,
+    #[serde(default)]
+    pub engine: Option<String>,
+}
+
+pub struct OcrExtractTool {
+    hermodr_url: String,
+    tenant_id: String,
+    client: reqwest::Client,
+}
+
+impl OcrExtractTool {
+    pub fn new(hermodr_url: String, tenant_id: String) -> Self {
+        Self {
+            hermodr_url,
+            tenant_id,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("reqwest client build"),
+        }
+    }
+}
+
+impl Tool for OcrExtractTool {
+    const NAME: &'static str = "ocr_extract";
+    type Error = std::io::Error;
+    type Args = OcrExtractArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
+        rig::completion::ToolDefinition {
+            name: Self::NAME.to_string(),
+            description:
+                "Extract text from a medical document image using Syn's hybrid OCR. \
+                 The smart router picks PaddleOCR / Typhoon-OCR-local locally, or \
+                 Gemini Flash/Pro on tenants with cloud tiers enabled (blocked on \
+                 phi_strict). Image must be base64-encoded PNG/JPEG/PDF (≤20MB). \
+                 Returns extracted_text plus audit_id."
+                    .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "image_base64": {
+                        "type": "string",
+                        "description": "Base64-encoded image bytes (no data: URI prefix)."
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Original filename — used for MIME detection.",
+                        "default": "upload.png"
+                    },
+                    "doc_type": {
+                        "type": "string",
+                        "enum": ["handwriting", "printed_thai", "mixed"],
+                        "description": "Optional document type hint for the smart router."
+                    },
+                    "hint_lang": {
+                        "type": "string",
+                        "description": "Language hint, e.g. 'th', 'en', 'th+en'."
+                    },
+                    "high_stakes": {
+                        "type": "boolean",
+                        "description": "Route to Gemini Pro if cloud Pro is enabled.",
+                        "default": false
+                    },
+                    "engine": {
+                        "type": "string",
+                        "description": "Manual override of router (curator use only)."
+                    }
+                },
+                "required": ["image_base64"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // Build the Hermodr JSON-RPC envelope: tools/call with the
+        // ocr_extract name. Hermodr forwards to syn-api /extract-json.
+        let mut params = serde_json::json!({
+            "name": "ocr_extract",
+            "arguments": {
+                "image_base64": args.image_base64,
+            }
+        });
+        if let Some(v) = &args.filename {
+            params["arguments"]["filename"] = serde_json::Value::String(v.clone());
+        }
+        if let Some(v) = &args.doc_type {
+            params["arguments"]["doc_type"] = serde_json::Value::String(v.clone());
+        }
+        if let Some(v) = &args.hint_lang {
+            params["arguments"]["hint_lang"] = serde_json::Value::String(v.clone());
+        }
+        if let Some(v) = args.high_stakes {
+            params["arguments"]["high_stakes"] = serde_json::Value::Bool(v);
+        }
+        if let Some(v) = &args.engine {
+            params["arguments"]["engine"] = serde_json::Value::String(v.clone());
+        }
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": params,
+        });
+
+        let resp = self
+            .client
+            .post(&self.hermodr_url)
+            .header("Content-Type", "application/json")
+            .header("X-Tenant-Id", &self.tenant_id)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("hermodr post: {e}")))?;
+
+        let status = resp.status();
+        let envelope: serde_json::Value = resp.json().await.map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("hermodr json: {e}"))
+        })?;
+        if !status.is_success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("hermodr {}: {}", status, envelope),
+            ));
+        }
+        if let Some(err) = envelope.get("error") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("hermodr rpc error: {err}"),
+            ));
+        }
+        // Hermodr wraps the upstream JSON as {result:{content:[{type:"text",text:"<json>"}]}}.
+        // Unwrap one level so the agent sees the syn-api payload directly.
+        let inner_text = envelope
+            .pointer("/result/content/0/text")
+            .and_then(|v| v.as_str());
+        match inner_text {
+            Some(s) => Ok(s.to_string()),
+            None => Ok(envelope.to_string()),
+        }
+    }
+}

@@ -148,7 +148,12 @@ impl OverseerManager {
                 )
             }
         };
-        let _agent_tools = agent_tools; // reserved for future per-tool config
+        // Sprint 51 — wire agent_configs.tools allowlist (set by
+        // sprint50_eir_ocr_allowlist.sql for the clinical Eir variants)
+        // into Bifrost's Rig tool registry. vector/graph/tree are already
+        // surfaced via the booleans above; ocr_extract is the first
+        // dynamic per-agent tool. New tools added here as they ship.
+        let has_ocr_extract = agent_tools.iter().any(|t| t == "ocr_extract");
 
         let mut limit = 5_usize;
         let mut alpha = 0.7_f64;
@@ -291,6 +296,23 @@ impl OverseerManager {
             }
         } else {
             builder = builder.tool(memvid_tool);
+        }
+
+        // Sprint 51 — mount ocr_extract when the agent's allowlist includes
+        // it. Backed by hermodr-syn (Syn/deploy/k8s/hermodr-syn.yaml); not
+        // pre-called here because the image arg only exists when the agent
+        // reasons toward it — unlike RAG tools which run on every turn.
+        // bypass_tools (gemini/heimdall path) skips tool surfacing entirely;
+        // those providers get OCR through the transparent path in
+        // `ocr_preprocess.rs` instead.
+        if has_ocr_extract && !bypass_tools {
+            let hermodr_url = std::env::var("HERMODR_SYN_URL")
+                .unwrap_or_else(|_| "http://hermodr-syn.asgard.svc:8090/rpc".to_string());
+            let ocr_tool = crate::swarm_engine::skills::OcrExtractTool::new(
+                hermodr_url,
+                tenant_id.to_string(),
+            );
+            builder = builder.tool(ocr_tool);
         }
 
         let overseer_agent = builder.build();
