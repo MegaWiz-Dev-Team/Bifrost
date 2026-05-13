@@ -86,7 +86,7 @@ impl OverseerManager {
 
     /// Run the full swarm simulation and return the final synthesized answer.
     #[instrument(skip(self), fields(tenant_id = %tenant_id, agent_id = %agent_id))]
-    pub async fn run_swarm(&self, tenant_id: &str, agent_id: &str, query: &str, session_id: Option<&str>) -> Result<SwarmResponse> {
+    pub async fn run_swarm(&self, tenant_id: &str, agent_id: &str, query: &str, session_id: Option<&str>, patient_id: Option<&str>) -> Result<SwarmResponse> {
         let generation_slot = self.router.config.resolve_slot("generation", None, None);
         let api_key = self.router.config.openai_api_key.clone()
             .filter(|k| !k.trim().is_empty())
@@ -171,6 +171,21 @@ impl OverseerManager {
             }
         }
 
+        // Pre-load patient's source_ids for filtered retrieval
+        let patient_source_ids: Option<Vec<i64>> = if let Some(pid) = patient_id {
+            let ids: Vec<i64> = sqlx::query_scalar(
+                "SELECT id FROM data_sources WHERE tenant_id = ? AND patient_id = ? AND last_sync_status = 'COMPLETED'"
+            )
+            .bind(tenant_id)
+            .bind(pid)
+            .fetch_all(&self.db_pool)
+            .await
+            .unwrap_or_default();
+            if ids.is_empty() { None } else { Some(ids) }
+        } else {
+            None
+        };
+
         // rig-core expects a Client
         let client = rig::providers::openai::Client::from_url(&api_key, &endpoint);
         
@@ -243,6 +258,7 @@ impl OverseerManager {
                 vec!["golden_qa".to_string(), "source_chunks".to_string()],
                 limit,
                 alpha,
+                patient_source_ids.clone(),
             );
             if bypass_tools {
                 let args = crate::swarm_engine::skills::ExtractorArgs { tenant_id: tenant_id.to_string(), query: query.to_string() };
@@ -335,7 +351,15 @@ impl OverseerManager {
         let mut history_text = String::new();
         let mut new_history = vec![];
 
-        if let Some(sid) = session_id {
+        // Scope session to patient: "{patient_id}:{session_id}" if patient is known
+        let scoped_sid: Option<String> = match (session_id, patient_id) {
+            (Some(sid), Some(pid)) => Some(format!("{}:{}", pid, sid)),
+            (Some(sid), None) => Some(sid.to_string()),
+            _ => None,
+        };
+        let sid = scoped_sid.as_deref();
+
+        if let Some(sid) = sid {
             let row: Option<(serde_json::Value,)> = sqlx::query_as(
                 "SELECT state_json FROM swarm_checkpoints WHERE session_id = ? AND tenant_id = ?"
             )
@@ -357,9 +381,9 @@ impl OverseerManager {
         }
 
         let augmented_query = if history_text.is_empty() {
-            format!("Tenant ID: {}\nQuery: {}\n{}", tenant_id, safe_query, manual_context)
+            format!("Tenant ID: {}\nPatient ID: {}\nQuery: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), safe_query, manual_context)
         } else {
-            format!("Tenant ID: {}\nPrevious Context:\n{}\n\nNew Query: {}\n{}", tenant_id, history_text, safe_query, manual_context)
+            format!("Tenant ID: {}\nPatient ID: {}\nPrevious Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), history_text, safe_query, manual_context)
         };
 
         // Auto-correction Context Constraint Loop

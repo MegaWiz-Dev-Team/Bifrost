@@ -27,6 +27,7 @@ struct AppState {
 struct RunAgentRequest {
     query: String,
     session_id: Option<String>,
+    patient_id: Option<String>,
     /// B-50d transparent OCR path. Base64-encoded image (no `data:` prefix).
     /// When present, Bifrost OCRs via Syn before entering the swarm and
     /// prepends extracted text to the query.
@@ -109,7 +110,7 @@ async fn run_agent(
         payload.query.clone()
     };
 
-    match state.overseer.run_swarm(&tenant_id, &agent_id, &effective_query, payload.session_id.as_deref()).await {
+    match state.overseer.run_swarm(&tenant_id, &agent_id, &effective_query, payload.session_id.as_deref(), payload.patient_id.as_deref()).await {
         Ok(response) => (axum::http::StatusCode::OK, axum::Json(response)).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,

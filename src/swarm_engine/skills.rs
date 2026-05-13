@@ -30,6 +30,7 @@ pub struct VectorSearchTool {
     collections: Vec<String>,
     limit: usize,
     alpha: f64,
+    patient_source_ids: Option<Vec<i64>>,
 }
 
 impl VectorSearchTool {
@@ -41,6 +42,7 @@ impl VectorSearchTool {
         collections: Vec<String>,
         limit: usize,
         alpha: f64,
+        patient_source_ids: Option<Vec<i64>>,
     ) -> Self {
         Self {
             db_pool,
@@ -50,6 +52,7 @@ impl VectorSearchTool {
             collections,
             limit,
             alpha,
+            patient_source_ids,
         }
     }
 }
@@ -88,12 +91,14 @@ impl Tool for VectorSearchTool {
 
         let limit = self.limit;
         let alpha = self.alpha;
+        let patient_source_ids = self.patient_source_ids.clone();
 
         for collection in collections {
             let qdrant_clone = qdrant.clone();
             let embed_clone = embedding_model.clone();
             let tenant_clone = tenant_id.clone();
             let query_clone = query.clone();
+            let source_ids = patient_source_ids.clone();
 
             let handle = tokio::spawn(async move {
                 let retriever = QdrantRetriever::new(
@@ -101,7 +106,7 @@ impl Tool for VectorSearchTool {
                     embed_clone,
                     collection,
                 );
-                retriever.search_filtered(&query_clone, &tenant_clone, limit, None, alpha).await
+                retriever.search_filtered(&query_clone, &tenant_clone, limit, source_ids.as_deref(), alpha).await
             });
             handles.push(handle);
         }
