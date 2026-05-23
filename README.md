@@ -158,6 +158,8 @@ bifrost/
 
 ### `POST /v1/agents/{agent_id}/run` — Execute agent
 ### `POST /v1/agents/{agent_id}/stream` — Execute with SSE stream
+### `GET /v1/agents` — List agents (capabilities + tool inventory) — see [docs/api/agents.md](docs/api/agents.md)
+### `GET /v1/agents/{agent_id_or_name}` — Agent detail (persona + full config) — see [docs/api/agents.md](docs/api/agents.md)
 ### `GET /v1/sessions` — List sessions
 ### `GET /v1/tools` — List registered tools
 ### `POST /v1/tools` — Register custom tool

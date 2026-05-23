@@ -13,14 +13,21 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use serde::Deserialize;
 
-// Import the swarm engine modules
+// Import the swarm engine modules (bin-only — heavyweight deps not needed
+// by integration tests, so they stay outside the library crate).
 pub mod swarm_engine;
 pub mod memory;
 pub mod retrieval;
 
+// HTTP-layer modules live in `lib.rs` so integration tests can reach them.
+use bifrost::{agents, auth_jwt as _, middleware};
+
 #[derive(Clone)]
-struct AppState {
-    overseer: Arc<swarm_engine::overseer::OverseerManager>,
+pub struct AppState {
+    pub overseer: Arc<swarm_engine::overseer::OverseerManager>,
+    /// Direct pool handle for the agent-registry list endpoint. sqlx pools are
+    /// already cheap to clone (internally Arc'd).
+    pub pool: sqlx::MySqlPool,
 }
 
 #[derive(Deserialize)]
@@ -160,18 +167,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memvid = Arc::new(memory::memvid_manager::MemvidManager::new("data/agents"));
     
     let overseer = Arc::new(swarm_engine::overseer::OverseerManager::new(
-        pool,
+        pool.clone(),
         qdrant,
         llm_router,
         memvid,
     ));
 
-    let state = AppState { overseer };
+    let state = AppState { overseer, pool };
+
+    // Build auth state from env (YGGDRASIL_ISSUER + JWT_AUDIENCE). If unset,
+    // /v1/agents* accepts X-Tenant-Id header only and logs a WARN per
+    // request — see `middleware::AuthState::from_env`.
+    let auth_state = middleware::AuthState::from_env();
+
+    // /v1/agents* sub-router: JWT + rate-limit (60 req/min/IP) applied
+    // inside `agents::build_router`. Same builder is used by integration
+    // tests so the test surface matches prod.
+    let agents_router = agents::build_router(state.pool.clone(), auth_state, 60);
 
     let app = Router::new()
         .route("/healthz", get(|| async { "OK" }))
         .route("/v1/agents/{agent_id}/run", post(run_agent))
-        .with_state(state);
+        .with_state(state)
+        .merge(agents_router);
 
     let addr = "0.0.0.0:8100";
     tracing::info!("Listening on {}", addr);

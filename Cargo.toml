@@ -29,3 +29,17 @@ opentelemetry = { version = "0.21.0", features = ["trace"] }
 opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.14.0", features = ["grpc-tonic"] }
 tracing-opentelemetry = "0.22.0"
+
+# Yggdrasil JWT validation (ported from Heimdall gateway)
+jsonwebtoken = "9"
+moka = { version = "0.12", features = ["future"] }
+
+# Rate limiting for /v1/agents*
+tower = { version = "0.5", features = ["util"] }
+tower_governor = "0.8"
+
+[dev-dependencies]
+wiremock = "0.6"
+http-body-util = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+tracing-test = "0.2"
