@@ -194,8 +194,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "0.0.0.0:8100";
     tracing::info!("Listening on {}", addr);
     let listener = TcpListener::bind(addr).await?;
-    
-    axum::serve(listener, app).await?;
+
+    // tower-governor's SmartIpKeyExtractor (used on /v1/agents*) falls back
+    // to the peer IP from ConnectInfo when no `X-Forwarded-For` / `X-Real-IP`
+    // header is present. Without `into_make_service_with_connect_info` axum
+    // never populates ConnectInfo and the extractor errors with
+    // "Unable To Extract Key!". Direct-NodePort callers (no ingress) need this.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     
     Ok(())
 }
