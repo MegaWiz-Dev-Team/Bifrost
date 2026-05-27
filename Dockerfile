@@ -14,9 +14,12 @@ WORKDIR /app
 # Copy Mimir bridge workspace so Bifrost can build the relative dependency inherited workspace
 COPY Mimir/ro-ai-bridge ./Mimir/ro-ai-bridge
 
-# Copy Bifrost manifests and sqlx offline cache
+# Copy Bifrost manifests
 COPY Bifrost/Cargo.toml Bifrost/Cargo.lock ./Bifrost/
+
+# Copy sqlx offline caches for both bifrost and mimir-core-ai
 COPY Bifrost/.sqlx ./Bifrost/.sqlx/
+COPY Mimir/ro-ai-bridge/.sqlx ./Mimir/ro-ai-bridge/mimir-core-ai/.sqlx/
 
 # Create dummy main.rs to cache dependency build
 RUN mkdir -p Bifrost/src \
