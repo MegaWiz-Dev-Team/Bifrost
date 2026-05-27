@@ -22,8 +22,9 @@ RUN mkdir -p Bifrost/src \
     && echo "fn main() {println!(\"Dummy cache target\");}" > Bifrost/src/main.rs
 
 WORKDIR /app/Bifrost
+ENV DATABASE_URL=mysql://root:root@mariadb.asgard.svc:3306/mimir
 RUN cargo build --release \
-    && rm -rf src/main.rs target/release/deps/bifrost*
+    && rm -rf src/main.rs target/release/deps/bifrost* || true
 
 # Return to root and copy the actual source code
 WORKDIR /app
@@ -31,6 +32,7 @@ COPY Bifrost/src ./Bifrost/src
 
 # Build the real application binary
 WORKDIR /app/Bifrost
+ENV DATABASE_URL=mysql://root:root@mariadb.asgard.svc:3306/mimir
 RUN cargo build --release
 
 # -------------------------
