@@ -6,7 +6,6 @@
 pub mod auth_jwt;
 pub mod middleware;
 pub mod agents;
-pub mod agent_conversations;
 pub mod rl_feedback;           // RL feedback collection and scoring
 pub mod rl_agent_self_eval;    // Agent self-evaluation & improvement proposals
 pub mod rl_governance_voting;  // Odin + Frigg approval voting
