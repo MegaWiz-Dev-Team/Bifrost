@@ -5,6 +5,7 @@
 # -------------------------
 FROM rust:latest as builder
 
+
 # Install required build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev gcc libc6-dev curl && rm -rf /var/lib/apt/lists/*
 
