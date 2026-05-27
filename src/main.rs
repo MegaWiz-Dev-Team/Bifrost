@@ -12,15 +12,19 @@ use mimir_core_ai::services::{db::DbPool, llm_router::LlmRouter, qdrant::QdrantS
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use serde::Deserialize;
+use uuid::Uuid;
 
 // Import the swarm engine modules (bin-only — heavyweight deps not needed
 // by integration tests, so they stay outside the library crate).
 pub mod swarm_engine;
 pub mod memory;
 pub mod retrieval;
+pub mod rl_scheduler;
+pub mod rl_deployment_monitor;
+pub mod rl_admin_routes;
 
 // HTTP-layer modules live in `lib.rs` so integration tests can reach them.
-use bifrost::{agents, auth_jwt as _, middleware};
+use bifrost::{agents, agent_conversations, auth_jwt as _, middleware};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -117,12 +121,171 @@ async fn run_agent(
         payload.query.clone()
     };
 
+    let start_time = std::time::Instant::now();
+    let agent_id_num: i64 = agent_id.parse().unwrap_or(0);
+
     match state.overseer.run_swarm(&tenant_id, &agent_id, &effective_query, payload.session_id.as_deref(), payload.patient_id.as_deref()).await {
-        Ok(response) => (axum::http::StatusCode::OK, axum::Json(response)).into_response(),
+        Ok(response) => {
+            let latency_ms = start_time.elapsed().as_millis() as i32;
+            let pool = state.pool.clone();
+            let session_id = payload.session_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+            let final_answer = response.final_answer.clone();
+
+            // Log RL feedback asynchronously (non-blocking)
+            tokio::spawn(async move {
+                if let Err(e) = bifrost::rl_orchestrator::log_dispatch_feedback_on_completion(
+                    &pool,
+                    &tenant_id,
+                    agent_id_num,
+                    &session_id,
+                    &effective_query,
+                    &final_answer,
+                    latency_ms,
+                    0.85,
+                )
+                .await
+                {
+                    tracing::warn!("RL feedback logging failed: tenant={}, agent={}, error={:?}", tenant_id, agent_id_num, e);
+                }
+            });
+
+            (axum::http::StatusCode::OK, axum::Json(response)).into_response()
+        }
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(serde_json::json!({"error": e.to_string()}))
         ).into_response(),
+    }
+}
+
+// A2A dispatch — called by mimir-api `/api/v1/a2a/dispatch` after audit /
+// routing-rule validation. Runs the target agent and returns its
+// `final_answer` synchronously so the dispatching agent can use the response
+// as a tool result. Target lookup accepts either a numeric agent id or the
+// agent_configs.name (the A2A routing rules use names, the run endpoint uses
+// ids — this handler bridges them).
+#[derive(Deserialize)]
+struct DispatchRequest {
+    source_agent_id: String,
+    target_agent_id: String,
+    message: String,
+    #[serde(default)]
+    dispatch_id: Option<String>,
+    #[serde(default)]
+    chain_id: Option<String>,
+    #[serde(default)]
+    chain_step: Option<i32>,
+    #[serde(default)]
+    require_pii_redaction: Option<bool>,
+    #[serde(default)]
+    chain_context: Option<serde_json::Value>,
+}
+
+async fn dispatch_agent(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<DispatchRequest>,
+) -> impl IntoResponse {
+    let target_tenant = headers
+        .get("X-Tenant-Id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default_tenant")
+        .to_string();
+
+    // Resolve target_agent_id: numeric id passes through; a name gets looked
+    // up against agent_configs within the target tenant.
+    let target_id: String = if payload.target_agent_id.parse::<i64>().is_ok() {
+        payload.target_agent_id.clone()
+    } else {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM agent_configs WHERE name = ? AND tenant_id = ?"
+        )
+        .bind(&payload.target_agent_id)
+        .bind(&target_tenant)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+        match row {
+            Some(r) => r.0.to_string(),
+            None => {
+                return (
+                    axum::http::StatusCode::NOT_FOUND,
+                    axum::Json(serde_json::json!({
+                        "error": format!(
+                            "target agent '{}' not found in tenant '{}'",
+                            payload.target_agent_id, target_tenant
+                        )
+                    })),
+                ).into_response();
+            }
+        }
+    };
+
+    tracing::info!(
+        source_agent = %payload.source_agent_id,
+        target_agent = %payload.target_agent_id,
+        target_id = %target_id,
+        target_tenant = %target_tenant,
+        dispatch_id = ?payload.dispatch_id,
+        chain_id = ?payload.chain_id,
+        chain_step = ?payload.chain_step,
+        "a2a.dispatch.executing"
+    );
+
+    let session_id = payload.dispatch_id.clone();
+    // chain_context, require_pii_redaction are propagated by mimir-api's
+    // dispatch handler before we get here; we don't re-apply Skuggi inside
+    // Bifrost — the message arriving here is already redacted if requested.
+    let _ = (payload.require_pii_redaction, payload.chain_context);
+
+    let start_time = std::time::Instant::now();
+    let agent_id_num: i64 = target_id.parse().unwrap_or(0);
+
+    match state
+        .overseer
+        .run_swarm(
+            &target_tenant,
+            &target_id,
+            &payload.message,
+            session_id.as_deref(),
+            None,
+        )
+        .await
+    {
+        Ok(response) => {
+            let latency_ms = start_time.elapsed().as_millis() as i32;
+            let pool = state.pool.clone();
+            let tenant_id = target_tenant.clone();
+            let session_id = session_id.clone();
+            let message = payload.message.clone();
+            let final_answer = response.final_answer.clone();
+
+            // Log RL feedback asynchronously (non-blocking)
+            tokio::spawn(async move {
+                if let Err(e) = bifrost::rl_orchestrator::log_dispatch_feedback_on_completion(
+                    &pool,
+                    &tenant_id,
+                    agent_id_num,
+                    &session_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+                    &message,
+                    &final_answer,
+                    latency_ms,
+                    0.85,
+                )
+                .await
+                {
+                    tracing::warn!("RL feedback logging failed: tenant={}, agent={}, error={:?}", tenant_id, agent_id_num, e);
+                }
+            });
+
+            (axum::http::StatusCode::OK, axum::Json(response)).into_response()
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -173,7 +336,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         memvid,
     ));
 
-    let state = AppState { overseer, pool };
+    let state = AppState { overseer, pool: pool.clone() };
+
+    // SPAWN RL BACKGROUND TASKS
+    rl_scheduler::spawn_rl_cycle_scheduler(pool.clone());
+    rl_deployment_monitor::spawn_deployment_monitor(pool.clone());
 
     // Build auth state from env (YGGDRASIL_ISSUER + JWT_AUDIENCE). If unset,
     // /v1/agents* accepts X-Tenant-Id header only and logs a WARN per
@@ -183,13 +350,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // /v1/agents* sub-router: JWT + rate-limit (60 req/min/IP) applied
     // inside `agents::build_router`. Same builder is used by integration
     // tests so the test surface matches prod.
-    let agents_router = agents::build_router(state.pool.clone(), auth_state, 60);
+    let agents_router = agents::build_router(state.pool.clone(), auth_state.clone(), 60);
+
+    // Agent conversation visualization API (dispatch logs, swarm topology, WebSocket stream)
+    let conversations_router = agent_conversations::build_router(state.pool.clone(), auth_state);
+
+    let rl_admin_router = rl_admin_routes::build_rl_admin_router(pool.clone());
 
     let app = Router::new()
         .route("/healthz", get(|| async { "OK" }))
         .route("/v1/agents/{agent_id}/run", post(run_agent))
+        .route("/v1/agents/dispatch", post(dispatch_agent))
         .with_state(state)
-        .merge(agents_router);
+        .merge(agents_router)
+        .merge(conversations_router)
+        .nest("/api/v1", rl_admin_router);
 
     let addr = "0.0.0.0:8100";
     tracing::info!("Listening on {}", addr);
