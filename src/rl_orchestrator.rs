@@ -8,7 +8,6 @@
 //! 5. Staged rollout (25% → 50% → 100%)
 //! 6. Compliance audit logging
 
-use chrono::Utc;
 use sqlx::MySqlPool;
 
 use crate::rl_feedback::{compute_feedback_scores, log_dispatch_feedback, compute_daily_metrics};
@@ -37,14 +36,18 @@ pub async fn log_dispatch_feedback_on_completion(
     // Phase 2: Compute feedback scores
     let feedback = compute_feedback_scores(query, response, latency_ms, model_confidence);
 
+    // Log feedback details before moving feedback
+    let quality_score = feedback.quality_score;
+    let relevance_score = feedback.relevance_score;
+
     // Log to database
     log_dispatch_feedback(pool, feedback, tenant_id, agent_id, session_id).await?;
 
     tracing::info!(
         "RL: Dispatch feedback logged; agent={}, quality={:.2}, relevance={:.2}, latency={}ms",
         agent_id,
-        feedback.quality_score,
-        feedback.relevance_score,
+        quality_score,
+        relevance_score,
         latency_ms
     );
 

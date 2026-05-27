@@ -14,9 +14,8 @@
 //! - Latency > +1000ms
 //! - Error rate > 5%
 
-use chrono::{Duration, Utc};
+use chrono::{Duration, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sqlx::MySqlPool;
 
 use crate::rl_governance_voting::GovernanceResult;
@@ -183,7 +182,7 @@ pub async fn evaluate_canary_health(
     .fetch_one(pool)
     .await?;
 
-    let phase_duration = Duration::hours(config.duration_hours as i64);
+    let phase_duration = TimeDelta::hours(config.duration_hours as i64);
     let phase_elapsed = Utc::now() - deployment.phase_start_time;
     let phase_complete = phase_elapsed >= phase_duration;
     let requests_sufficient = deployment.requests_processed.unwrap_or(0) >= config.min_requests as i64;
