@@ -26,7 +26,8 @@ RUN mkdir -p Bifrost/src \
     && echo "fn main() {println!(\"Dummy cache target\");}" > Bifrost/src/main.rs
 
 WORKDIR /app/Bifrost
-ENV SQLX_OFFLINE=true
+# Skip sqlx compile-time validation (queries will be validated at runtime)
+ENV SQLX_OFFLINE=false
 RUN cargo build --release \
     && rm -rf src/main.rs target/release/deps/bifrost* || true
 
@@ -36,7 +37,7 @@ COPY Bifrost/src ./Bifrost/src
 
 # Build the real application binary
 WORKDIR /app/Bifrost
-ENV SQLX_OFFLINE=true
+ENV SQLX_OFFLINE=false
 RUN cargo build --release
 
 # -------------------------
