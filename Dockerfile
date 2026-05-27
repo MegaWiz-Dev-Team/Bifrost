@@ -14,15 +14,16 @@ WORKDIR /app
 # Copy Mimir bridge workspace so Bifrost can build the relative dependency inherited workspace
 COPY Mimir/ro-ai-bridge ./Mimir/ro-ai-bridge
 
-# Copy Bifrost manifests
+# Copy Bifrost manifests and sqlx offline cache
 COPY Bifrost/Cargo.toml Bifrost/Cargo.lock ./Bifrost/
+COPY Bifrost/.sqlx ./Bifrost/.sqlx/
 
 # Create dummy main.rs to cache dependency build
 RUN mkdir -p Bifrost/src \
     && echo "fn main() {println!(\"Dummy cache target\");}" > Bifrost/src/main.rs
 
 WORKDIR /app/Bifrost
-ENV DATABASE_URL=mysql://root:root@mariadb.asgard.svc:3306/mimir
+ENV SQLX_OFFLINE=true
 RUN cargo build --release \
     && rm -rf src/main.rs target/release/deps/bifrost* || true
 
@@ -32,7 +33,7 @@ COPY Bifrost/src ./Bifrost/src
 
 # Build the real application binary
 WORKDIR /app/Bifrost
-ENV DATABASE_URL=mysql://root:root@mariadb.asgard.svc:3306/mimir
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # -------------------------
