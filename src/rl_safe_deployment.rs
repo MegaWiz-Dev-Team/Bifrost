@@ -14,7 +14,7 @@
 //! - Latency > +1000ms
 //! - Error rate > 5%
 
-use chrono::{Duration, TimeDelta, Utc};
+use chrono::{TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::MySqlPool;
 

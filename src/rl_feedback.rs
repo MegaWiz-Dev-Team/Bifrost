@@ -8,7 +8,6 @@
 //!
 //! Scores stored in mimir.agent_feedback_logs for downstream RL analysis
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::MySqlPool;
 use uuid::Uuid;

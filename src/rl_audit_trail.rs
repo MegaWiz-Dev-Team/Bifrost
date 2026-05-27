@@ -517,7 +517,7 @@ pub async fn get_audit_trail(
                 actor_agent_id: e.actor_agent_id,
                 actor_agent_name: e.actor_agent_name,
                 impact_summary: e.impact_summary,
-                compliance_flags: e.compliance_flags.and_then(|f| serde_json::from_str::<Vec<String>>(&f).ok()),
+                compliance_flags: e.compliance_flags.and_then(|f| serde_json::from_str::<Vec<String>>(f.as_str()).ok()),
                 created_at: e.created_at,
             }
         })
