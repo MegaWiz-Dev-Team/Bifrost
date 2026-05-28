@@ -49,21 +49,35 @@ struct AgentListRow {
     use_pageindex: Option<i8>,
     tools: Option<Value>,
     mcp_servers: Option<Value>,
+    agent_group_id: Option<i64>,
+    group_display_name: Option<String>,
+    group_icon_emoji: Option<String>,
+    group_color_hex: Option<String>,
+    group_sort_order: Option<i32>,
 }
 
 impl AgentListRow {
     fn to_json(&self) -> Value {
-        json!({
-            "id": self.id,
-            "name": self.name,
-            "display_name": self.display_name,
-            "description": self.description,
-            "avatar_url": self.avatar_url,
-            "is_published": self.is_published == 1,
-            // Legacy top-level field for one release window. New consumers
-            // should read from `capabilities`.
-            "model_id": self.model_id,
-            "capabilities": capabilities_json(
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert("id".to_string(), Value::Number(self.id.into()));
+        json_obj.insert("name".to_string(), Value::String(self.name.clone()));
+        json_obj.insert(
+            "display_name".to_string(),
+            self.display_name.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "description".to_string(),
+            self.description.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "avatar_url".to_string(),
+            self.avatar_url.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert("is_published".to_string(), Value::Bool(self.is_published == 1));
+        json_obj.insert("model_id".to_string(), Value::String(self.model_id.clone()));
+        json_obj.insert(
+            "capabilities".to_string(),
+            capabilities_json(
                 &self.model_id,
                 &self.provider,
                 self.temperature,
@@ -75,7 +89,36 @@ impl AgentListRow {
                 self.tools.as_ref(),
                 self.mcp_servers.as_ref(),
             ),
-        })
+        );
+
+        // Include agent group information if assigned
+        if self.agent_group_id.is_some() {
+            let mut group_obj = serde_json::Map::new();
+            if let Some(id) = self.agent_group_id {
+                group_obj.insert("id".to_string(), Value::Number(id.into()));
+            }
+            group_obj.insert(
+                "display_name".to_string(),
+                self.group_display_name
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+            group_obj.insert(
+                "icon_emoji".to_string(),
+                self.group_icon_emoji.clone().map(Value::String).unwrap_or(Value::Null),
+            );
+            group_obj.insert(
+                "color_hex".to_string(),
+                self.group_color_hex.clone().map(Value::String).unwrap_or(Value::Null),
+            );
+            if let Some(sort_order) = self.group_sort_order {
+                group_obj.insert("sort_order".to_string(), Value::Number(sort_order.into()));
+            }
+            json_obj.insert("agent_group".to_string(), Value::Object(group_obj));
+        }
+
+        Value::Object(json_obj)
     }
 }
 
@@ -106,24 +149,56 @@ struct AgentDetailRow {
     system_prompt: String,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
+    agent_group_id: Option<i64>,
+    group_display_name: Option<String>,
+    group_icon_emoji: Option<String>,
+    group_color_hex: Option<String>,
+    group_sort_order: Option<i32>,
 }
 
 impl AgentDetailRow {
     fn to_json(&self) -> Value {
-        json!({
-            "id": self.id,
-            "name": self.name,
-            "display_name": self.display_name,
-            "description": self.description,
-            "avatar_url": self.avatar_url,
-            "greeting": self.greeting,
-            "is_published": self.is_published == 1,
-            "model_id": self.model_id,
-            "system_prompt": self.system_prompt,
-            "personality_traits": json_array_or_empty(self.personality_traits.as_ref()),
-            "created_at": self.created_at.map(|d| d.to_rfc3339()),
-            "updated_at": self.updated_at.map(|d| d.to_rfc3339()),
-            "capabilities": capabilities_json(
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert("id".to_string(), Value::Number(self.id.into()));
+        json_obj.insert("name".to_string(), Value::String(self.name.clone()));
+        json_obj.insert(
+            "display_name".to_string(),
+            self.display_name.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "description".to_string(),
+            self.description.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "avatar_url".to_string(),
+            self.avatar_url.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "greeting".to_string(),
+            self.greeting.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        json_obj.insert("is_published".to_string(), Value::Bool(self.is_published == 1));
+        json_obj.insert("model_id".to_string(), Value::String(self.model_id.clone()));
+        json_obj.insert("system_prompt".to_string(), Value::String(self.system_prompt.clone()));
+        json_obj.insert(
+            "personality_traits".to_string(),
+            json_array_or_empty(self.personality_traits.as_ref()),
+        );
+        json_obj.insert(
+            "created_at".to_string(),
+            self.created_at
+                .map(|d| Value::String(d.to_rfc3339()))
+                .unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "updated_at".to_string(),
+            self.updated_at
+                .map(|d| Value::String(d.to_rfc3339()))
+                .unwrap_or(Value::Null),
+        );
+        json_obj.insert(
+            "capabilities".to_string(),
+            capabilities_json(
                 &self.model_id,
                 &self.provider,
                 self.temperature,
@@ -135,8 +210,40 @@ impl AgentDetailRow {
                 self.tools.as_ref(),
                 self.mcp_servers.as_ref(),
             ),
-            "rag_params": rag_params_whitelist(self.rag_params.as_ref()),
-        })
+        );
+        json_obj.insert(
+            "rag_params".to_string(),
+            rag_params_whitelist(self.rag_params.as_ref()),
+        );
+
+        // Include agent group information if assigned
+        if self.agent_group_id.is_some() {
+            let mut group_obj = serde_json::Map::new();
+            if let Some(id) = self.agent_group_id {
+                group_obj.insert("id".to_string(), Value::Number(id.into()));
+            }
+            group_obj.insert(
+                "display_name".to_string(),
+                self.group_display_name
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+            group_obj.insert(
+                "icon_emoji".to_string(),
+                self.group_icon_emoji.clone().map(Value::String).unwrap_or(Value::Null),
+            );
+            group_obj.insert(
+                "color_hex".to_string(),
+                self.group_color_hex.clone().map(Value::String).unwrap_or(Value::Null),
+            );
+            if let Some(sort_order) = self.group_sort_order {
+                group_obj.insert("sort_order".to_string(), Value::Number(sort_order.into()));
+            }
+            json_obj.insert("agent_group".to_string(), Value::Object(group_obj));
+        }
+
+        Value::Object(json_obj)
     }
 }
 
@@ -361,30 +468,48 @@ fn emit_audit(ctx: &TenantContext, agent_id: i64, agent_name: &str) {
 // are invisible until added here on purpose.
 
 const LIST_SQL_PUBLISHED: &str = "SELECT \
-    id, name, display_name, description, avatar_url, is_published, \
-    model_id, provider, CAST(temperature AS DOUBLE) AS temperature, max_tokens, top_k, \
-    use_rag, use_knowledge_graph, use_pageindex, tools, mcp_servers \
-    FROM agent_configs WHERE tenant_id = ? AND is_published = 1 ORDER BY id";
+    ac.id, ac.name, ac.display_name, ac.description, ac.avatar_url, ac.is_published, \
+    ac.model_id, ac.provider, CAST(ac.temperature AS DOUBLE) AS temperature, ac.max_tokens, ac.top_k, \
+    ac.use_rag, ac.use_knowledge_graph, ac.use_pageindex, ac.tools, ac.mcp_servers, \
+    ag.id as agent_group_id, ag.display_name as group_display_name, ag.icon_emoji as group_icon_emoji, \
+    ag.color_hex as group_color_hex, ag.sort_order as group_sort_order \
+    FROM agent_configs ac \
+    LEFT JOIN agent_groups ag ON ac.agent_group_id = ag.id AND ac.tenant_id = ag.tenant_id \
+    WHERE ac.tenant_id = ? AND ac.is_published = 1 \
+    ORDER BY COALESCE(ag.sort_order, 99), ac.name";
 
 const LIST_SQL_ALL: &str = "SELECT \
-    id, name, display_name, description, avatar_url, is_published, \
-    model_id, provider, CAST(temperature AS DOUBLE) AS temperature, max_tokens, top_k, \
-    use_rag, use_knowledge_graph, use_pageindex, tools, mcp_servers \
-    FROM agent_configs WHERE tenant_id = ? ORDER BY id";
+    ac.id, ac.name, ac.display_name, ac.description, ac.avatar_url, ac.is_published, \
+    ac.model_id, ac.provider, CAST(ac.temperature AS DOUBLE) AS temperature, ac.max_tokens, ac.top_k, \
+    ac.use_rag, ac.use_knowledge_graph, ac.use_pageindex, ac.tools, ac.mcp_servers, \
+    ag.id as agent_group_id, ag.display_name as group_display_name, ag.icon_emoji as group_icon_emoji, \
+    ag.color_hex as group_color_hex, ag.sort_order as group_sort_order \
+    FROM agent_configs ac \
+    LEFT JOIN agent_groups ag ON ac.agent_group_id = ag.id AND ac.tenant_id = ag.tenant_id \
+    WHERE ac.tenant_id = ? \
+    ORDER BY COALESCE(ag.sort_order, 99), ac.name";
 
 const DETAIL_SQL_BY_ID: &str = "SELECT \
-    id, name, display_name, description, avatar_url, greeting, is_published, \
-    model_id, provider, CAST(temperature AS DOUBLE) AS temperature, max_tokens, top_k, \
-    use_rag, use_knowledge_graph, use_pageindex, tools, mcp_servers, \
-    personality_traits, rag_params, system_prompt, created_at, updated_at \
-    FROM agent_configs WHERE id = ? AND tenant_id = ?";
+    ac.id, ac.name, ac.display_name, ac.description, ac.avatar_url, ac.greeting, ac.is_published, \
+    ac.model_id, ac.provider, CAST(ac.temperature AS DOUBLE) AS temperature, ac.max_tokens, ac.top_k, \
+    ac.use_rag, ac.use_knowledge_graph, ac.use_pageindex, ac.tools, ac.mcp_servers, \
+    ac.personality_traits, ac.rag_params, ac.system_prompt, ac.created_at, ac.updated_at, \
+    ag.id as agent_group_id, ag.display_name as group_display_name, ag.icon_emoji as group_icon_emoji, \
+    ag.color_hex as group_color_hex, ag.sort_order as group_sort_order \
+    FROM agent_configs ac \
+    LEFT JOIN agent_groups ag ON ac.agent_group_id = ag.id AND ac.tenant_id = ag.tenant_id \
+    WHERE ac.id = ? AND ac.tenant_id = ?";
 
 const DETAIL_SQL_BY_NAME: &str = "SELECT \
-    id, name, display_name, description, avatar_url, greeting, is_published, \
-    model_id, provider, CAST(temperature AS DOUBLE) AS temperature, max_tokens, top_k, \
-    use_rag, use_knowledge_graph, use_pageindex, tools, mcp_servers, \
-    personality_traits, rag_params, system_prompt, created_at, updated_at \
-    FROM agent_configs WHERE name = ? AND tenant_id = ?";
+    ac.id, ac.name, ac.display_name, ac.description, ac.avatar_url, ac.greeting, ac.is_published, \
+    ac.model_id, ac.provider, CAST(ac.temperature AS DOUBLE) AS temperature, ac.max_tokens, ac.top_k, \
+    ac.use_rag, ac.use_knowledge_graph, ac.use_pageindex, ac.tools, ac.mcp_servers, \
+    ac.personality_traits, ac.rag_params, ac.system_prompt, ac.created_at, ac.updated_at, \
+    ag.id as agent_group_id, ag.display_name as group_display_name, ag.icon_emoji as group_icon_emoji, \
+    ag.color_hex as group_color_hex, ag.sort_order as group_sort_order \
+    FROM agent_configs ac \
+    LEFT JOIN agent_groups ag ON ac.agent_group_id = ag.id AND ac.tenant_id = ag.tenant_id \
+    WHERE ac.name = ? AND ac.tenant_id = ?";
 
 // ─────────────────────────── Unit tests ──────────────────────────────────
 

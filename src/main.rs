@@ -25,7 +25,7 @@ pub mod rl_deployment_monitor;
 pub mod rl_admin_routes;
 
 // HTTP-layer modules live in `lib.rs` so integration tests can reach them.
-use bifrost::{agents, auth_jwt as _, middleware};
+use bifrost::{agents, agent_groups, auth_jwt as _, middleware};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -352,7 +352,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // /v1/agents* sub-router: JWT + rate-limit (60 req/min/IP) applied
     // inside `agents::build_router`. Same builder is used by integration
     // tests so the test surface matches prod.
-    let agents_router = agents::build_router(state.pool.clone(), auth_state, 60);
+    let agents_router = agents::build_router(state.pool.clone(), auth_state.clone(), 60);
+
+    // /v1/agent-groups* sub-router: JWT + rate-limit applied
+    let agent_groups_router = agent_groups::build_router(state.pool.clone(), auth_state, 60);
 
     let rl_admin_router = rl_admin_routes::build_rl_admin_router(pool.clone());
 
@@ -367,6 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/agents/dispatch", post(dispatch_agent))
         .with_state(state)
         .merge(agents_router)
+        .merge(agent_groups_router)
         .nest("/api/v1", rl_admin_router)
         .fallback_service(serve_dir);
 
