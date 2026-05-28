@@ -149,7 +149,7 @@ spec:
           # Health checks
           livenessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: 8100
               scheme: HTTP
             initialDelaySeconds: 30
