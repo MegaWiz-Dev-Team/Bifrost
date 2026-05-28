@@ -159,7 +159,7 @@ spec:
 
           readinessProbe:
             httpGet:
-              path: /ready
+              path: /healthz
               port: 8100
               scheme: HTTP
             initialDelaySeconds: 10
