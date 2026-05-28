@@ -38,6 +38,12 @@ moka = { version = "0.12", features = ["future"] }
 tower = { version = "0.5", features = ["util"] }
 tower_governor = "0.8"
 
+# Static file serving for Odin dashboard
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+
+# Loki logging for RL governance events (we use structured tracing, not this crate directly)
+# loki-logger = "0.1.3"  # Optional: for direct Loki HTTP logging
+
 [dev-dependencies]
 wiremock = "0.6"
 http-body-util = "0.1"

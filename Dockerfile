@@ -1,63 +1,55 @@
-# ⚡ Bifrost — Agent Runtime Engine (Native Rust)
+# Multi-stage build for Bifrost RL Governance Backend
+# Build requires mimir-core-ai local dependency
+# Invoke from parent directory: docker build -f Bifrost/Dockerfile -t bifrost:latest .
 
-# -------------------------
-# Build Stage
-# -------------------------
-FROM rust:latest as builder
+# Stage 1: Build Rust binary (latest stable required for all dependency versions)
+FROM rust:latest AS builder
 
+WORKDIR /build
 
-# Install required build dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev gcc libc6-dev curl && rm -rf /var/lib/apt/lists/*
+# Copy workspace structure (Bifrost + Mimir)
+COPY Bifrost ./Bifrost
+COPY Mimir ./Mimir
 
-WORKDIR /app
+WORKDIR /build/Bifrost
 
-# Copy Mimir bridge workspace so Bifrost can build the relative dependency inherited workspace
-COPY Mimir/ro-ai-bridge ./Mimir/ro-ai-bridge
+# Build with SQLX_OFFLINE to skip database validation at build time
+ENV SQLX_OFFLINE=true
+ENV RUST_LOG=info
+ENV CARGO_NET_OFFLINE=false
 
-# Copy Bifrost manifests
-COPY Bifrost/Cargo.toml Bifrost/Cargo.lock ./Bifrost/
+# Build release binary
+RUN cargo build --package bifrost --release 2>&1 | tail -50
 
-# Copy sqlx offline caches for both bifrost and mimir-core-ai
-COPY Bifrost/.sqlx ./Bifrost/.sqlx/
-COPY Mimir/ro-ai-bridge/.sqlx ./Mimir/ro-ai-bridge/mimir-core-ai/.sqlx/
+# Stage 1b: Frontend assets (React dashboard)
+# Copy pre-built assets from Bifrost/dashboard/dist
+FROM node:lts-slim AS frontend
+COPY Bifrost/dashboard/dist /dashboard-dist
 
-# Create dummy main.rs to cache dependency build
-RUN mkdir -p Bifrost/src \
-    && echo "fn main() {println!(\"Dummy cache target\");}" > Bifrost/src/main.rs
-
-WORKDIR /app/Bifrost
-# Skip sqlx compile-time validation - will validate at runtime
-ENV SQLX_OFFLINE=false
-RUN cargo build --release \
-    && rm -rf src/main.rs target/release/deps/bifrost* || true
-
-# Return to root and copy the actual source code
-WORKDIR /app
-COPY Bifrost/src ./Bifrost/src
-
-# Build the real application binary
-WORKDIR /app/Bifrost
-ENV SQLX_OFFLINE=false
-RUN cargo build --release
-
-# -------------------------
-# Runtime Stage
-# -------------------------
+# Stage 2: Runtime image
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates curl libssl3 && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /app/Bifrost/target/release/bifrost /app/bifrost
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Ensure data directory exists for Memvid
-RUN mkdir -p /app/data
+# Copy binary from builder
+COPY --from=builder /build/Bifrost/target/release/bifrost /app/bifrost
 
-EXPOSE 8100
+# Copy frontend assets from frontend stage
+COPY --from=frontend /dashboard-dist /app/public
 
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-    CMD curl -f http://localhost:8100/healthz || exit 1
+# Set environment
+ENV RUST_LOG=info
+ENV LISTEN_ADDR=0.0.0.0:8100
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8100/health || exit 1
+
+# Run bifrost
 CMD ["/app/bifrost"]

@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
     Router,
 };
+use tower_http::services::ServeDir;
 use opentelemetry_otlp::WithExportConfig;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -354,13 +355,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rl_admin_router = rl_admin_routes::build_rl_admin_router(pool.clone());
 
+    // Serve static files from /app/public (Odin dashboard React assets)
+    let serve_dir = ServeDir::new("public").not_found_service(
+        ServeDir::new("public/index.html")
+    );
+
     let app = Router::new()
         .route("/healthz", get(|| async { "OK" }))
         .route("/v1/agents/{agent_id}/run", post(run_agent))
         .route("/v1/agents/dispatch", post(dispatch_agent))
         .with_state(state)
         .merge(agents_router)
-        .nest("/api/v1", rl_admin_router);
+        .nest("/api/v1", rl_admin_router)
+        .fallback_service(serve_dir);
 
     let addr = "0.0.0.0:8100";
     tracing::info!("Listening on {}", addr);
