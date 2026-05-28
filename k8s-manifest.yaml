@@ -34,9 +34,9 @@ metadata:
   namespace: asgard-rl
 type: Opaque
 stringData:
-  DATABASE_URL: "mysql://root:changeme@mariadb.asgard.svc:3306/asgard_rl"
-  DB_USER: "root"
-  DB_PASSWORD: "changeme"
+  DATABASE_URL: "mysql://mimir:671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620@192.168.194.212:3306/mimir"
+  DB_USER: "mimir"
+  DB_PASSWORD: "671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620"
 
 ---
 # Service: Expose Bifrost on port 8100
