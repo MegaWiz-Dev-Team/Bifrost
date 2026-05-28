@@ -6,7 +6,7 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 use tracing::{info, error};
 
 use bifrost::rl_orchestrator::{
@@ -85,6 +85,42 @@ pub async fn check_deployments(
     }
 }
 
+/// GET /api/v1/rl/proposals/pending?status=pending
+pub async fn get_pending_proposals(
+    State(_pool): State<MySqlPool>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let status = params.get("status").map(|s| s.as_str()).unwrap_or("pending");
+    info!("Fetching proposals with status: {}", status);
+
+    // Mock response - proposals table not yet implemented
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "success",
+            "proposals": [],
+            "total_count": 0,
+            "message": "No proposals yet - RL cycle hasn't run",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })),
+    )
+}
+
+/// GET /api/v1/rl/proposals/{proposal_id}
+pub async fn get_proposal_details(
+    State(_pool): State<MySqlPool>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "success",
+            "proposal": null,
+            "message": "Proposal details not yet implemented",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })),
+    )
+}
+
 /// GET /api/v1/rl/agent-status?tenant_id=asgard_medical
 pub async fn get_agent_rl_status(
     State(pool): State<MySqlPool>,
@@ -92,7 +128,7 @@ pub async fn get_agent_rl_status(
 ) -> (StatusCode, Json<serde_json::Value>) {
     let tenant_id = &params.tenant_id;
 
-    let status = match sqlx::query!(
+    let status = match sqlx::query(
         r#"
         SELECT
             ac.id,
@@ -108,9 +144,9 @@ pub async fn get_agent_rl_status(
             AND arm.tenant_id = ac.tenant_id
         WHERE ac.tenant_id = ? AND ac.is_published = 1
         ORDER BY ac.id
-        "#,
-        tenant_id
+        "#
     )
+    .bind(tenant_id)
     .fetch_all(&pool)
     .await
     {
@@ -118,15 +154,24 @@ pub async fn get_agent_rl_status(
             let agents_json: Vec<serde_json::Value> = rows
                 .iter()
                 .map(|row| {
+                    let id: i64 = row.get("id");
+                    let name: String = row.get("name");
+                    let avg_quality: f64 = row.get("avg_quality_score");
+                    let conversation_count: i64 = row.get("conversation_count");
+                    let weak_domain: Option<String> = row.get("lowest_quality_domain");
+                    let weak_score: f64 = row.get("lowest_quality_score");
+                    let opportunity_score: f64 = row.get("improvement_opportunity_score");
+                    let metric_date: Option<String> = row.get("metric_date");
+
                     serde_json::json!({
-                        "id": row.id,
-                        "name": &row.name,
-                        "avg_quality": row.avg_quality_score,
-                        "conversations": row.conversation_count,
-                        "weak_domain": &row.lowest_quality_domain,
-                        "weak_score": row.lowest_quality_score,
-                        "opportunity_score": row.improvement_opportunity_score,
-                        "last_updated": &row.metric_date
+                        "id": id,
+                        "name": name,
+                        "avg_quality": avg_quality,
+                        "conversations": conversation_count,
+                        "weak_domain": weak_domain,
+                        "weak_score": weak_score,
+                        "opportunity_score": opportunity_score,
+                        "last_updated": metric_date
                     })
                 })
                 .collect();
@@ -161,5 +206,7 @@ pub fn build_rl_admin_router(pool: MySqlPool) -> Router {
         .route("/rl/trigger-daily-cycle", get(trigger_daily_cycle))
         .route("/rl/check-deployments", get(check_deployments))
         .route("/rl/agent-status", get(get_agent_rl_status))
+        .route("/rl/proposals/pending", get(get_pending_proposals))
+        .route("/rl/proposals/{proposal_id}", get(get_proposal_details))
         .with_state(pool)
 }
