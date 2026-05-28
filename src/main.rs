@@ -328,7 +328,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let llm_router = Arc::new(LlmRouter::new(pool.clone(), "default").await.expect("Failed to init LlmRouter"));
     
-    let memvid = Arc::new(memory::memvid_manager::MemvidManager::new("data/agents"));
+    let memvid_base = std::env::var("MEMVID_DATA_DIR").unwrap_or_else(|_| "data/agents".to_string());
+    let memvid = Arc::new(memory::memvid_manager::MemvidManager::new(memvid_base));
     
     let overseer = Arc::new(swarm_engine::overseer::OverseerManager::new(
         pool.clone(),
