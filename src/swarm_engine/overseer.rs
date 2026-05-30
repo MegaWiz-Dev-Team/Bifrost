@@ -408,6 +408,21 @@ impl OverseerManager {
             format!("Tenant ID: {}\nPatient ID: {}\nPrevious Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), history_text, safe_query, manual_context)
         };
 
+        // In bypass mode (heimdall/gemini) all grounding is already injected
+        // above and the model CANNOT execute further tools. Forbid action_required
+        // so it answers directly instead of returning a "request a search" stub
+        // (root cause of the 32-40% action_required non-answer rate).
+        let augmented_query = if bypass_tools {
+            format!(
+                "{augmented_query}\n\nIMPORTANT: All the context you need is provided above. \
+                 Answer the query DIRECTLY now using that context and your medical knowledge. \
+                 Put your COMPLETE answer in the `final_answer` field and set `action_required` to null. \
+                 Do NOT request any tool, search, or further action — there will be no further turns."
+            )
+        } else {
+            augmented_query
+        };
+
         // Auto-correction Context Constraint Loop
         let mut final_answer = None;
         let mut current_query = augmented_query.clone();
