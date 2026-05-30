@@ -604,9 +604,19 @@ impl MimirKbSearchTool {
         let v: serde_json::Value = resp.json().await.map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("mimir-kb json: {e}"))
         })?;
+        // Whitelist: only clinical-grounding KBs help chat reasoning. Drug/lab
+        // CODE masters (TMT/TMLT/TPC/LOINC) + abbrev are keyword-matchers that
+        // inject noise on natural-language queries (e.g. "first-line drug" →
+        // "BEPANTHEN FIRST AID") and belong to the deterministic coding path
+        // (Iris), not chat grounding. Guards the -9pp naive-RAG regression.
+        const KB_ALLOW: &[&str] = &["icd10-tm", "primekg", "symptoms"];
         let mut out = String::new();
         if let Some(results) = v.get("results").and_then(|r| r.as_array()) {
             for kb in results {
+                let kb_id = kb.get("kb_id").and_then(|i| i.as_str()).unwrap_or("");
+                if !KB_ALLOW.contains(&kb_id) {
+                    continue; // skip code-master / noise KBs
+                }
                 let items = match kb.get("items").and_then(|i| i.as_array()) {
                     Some(a) if !a.is_empty() => a, // relevance gate: skip 0-hit KBs
                     _ => continue,
