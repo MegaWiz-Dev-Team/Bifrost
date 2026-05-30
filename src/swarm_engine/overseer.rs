@@ -314,31 +314,25 @@ impl OverseerManager {
             builder = builder.tool(memvid_tool);
         }
 
-        // Medical KB grounding (R2 resolvers + R3 PrimeKG via hermodr-mimir).
-        // heimdall agents bypass ReAct, so query-based KB tools listed in
-        // agent_configs.tools are called here and injected into manual context.
-        if bypass_tools {
-            let hermodr_mimir_url = std::env::var("HERMODR_MIMIR_URL")
-                .unwrap_or_else(|_| "http://hermodr-mimir.asgard.svc:8090/rpc".to_string());
-            for tool_name in &agent_tools {
-                if let Some(label) = super::skills::kb_tool_label(tool_name) {
-                    let kb = super::skills::HermodrKbTool::new(
-                        hermodr_mimir_url.clone(),
-                        tenant_id.to_string(),
-                        tool_name.clone(),
-                    );
-                    let args = crate::swarm_engine::skills::ExtractorArgs {
-                        tenant_id: tenant_id.to_string(),
-                        query: query.to_string(),
-                    };
-                    match kb.call(args).await {
-                        Ok(res) if !res.trim().is_empty() => {
-                            manual_context.push_str(&format!("\n[{}]:\n{}\n", label, res));
-                        }
-                        Ok(_) => {}
-                        Err(e) => tracing::warn!(tool = %tool_name, error = %e, "KB tool call failed"),
-                    }
+        // Medical KB grounding (R2 resolvers + R3 PrimeKG). heimdall agents
+        // bypass ReAct, so if the agent opts into KB tools (agent_configs.tools),
+        // we do ONE unified cross-KB search against Mimir's live endpoint and
+        // inject the relevance-gated result. Single call covers ICD-10-TM /
+        // PrimeKG / LOINC / TMT / SNOMED — no Mimir/Hermodr rebuild needed.
+        if bypass_tools && agent_tools.iter().any(|t| super::skills::kb_tool_label(t).is_some()) {
+            let mimir_url = std::env::var("MIMIR_URL")
+                .unwrap_or_else(|_| "http://mimir-api.asgard.svc:8080".to_string());
+            let kb = super::skills::MimirKbSearchTool::new(mimir_url, tenant_id.to_string(), 4);
+            let args = crate::swarm_engine::skills::ExtractorArgs {
+                tenant_id: tenant_id.to_string(),
+                query: query.to_string(),
+            };
+            match kb.call(args).await {
+                Ok(res) if !res.trim().is_empty() => {
+                    manual_context.push_str(&format!("\n[Medical Knowledge Base]:\n{}\n", res));
                 }
+                Ok(_) => {}
+                Err(e) => tracing::warn!(error = %e, "Mimir KB search failed"),
             }
         }
 
