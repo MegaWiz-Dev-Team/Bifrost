@@ -463,3 +463,82 @@ impl Tool for OcrExtractTool {
         }
     }
 }
+
+// ─────────────────────────── HermodrKbTool ────────────────────────────────
+// Generic medical knowledge-base tool. Calls a query-based Hermodr MCP tool
+// (served by hermodr-mimir → Mimir Neo4j/Qdrant/mariadb masters) and returns
+// its text payload. One struct covers R2 (code/text resolvers) + R3 (PrimeKG
+// graph) because every such tool takes a single `query` argument and Hermodr
+// wraps the reply the same way. Heimdall agents (bypass_tools) call this in
+// the manual-context path; the result is injected before generation.
+//
+//   PrimeKG (R3, Neo4j-backed):  search_primekg, primekg_disease_relations
+//   Resolvers (R2):              search_clinical_kb, snomed_search, ...
+pub struct HermodrKbTool {
+    hermodr_url: String,
+    tenant_id: String,
+    tool_name: String,
+    client: reqwest::Client,
+}
+
+impl HermodrKbTool {
+    pub fn new(hermodr_url: String, tenant_id: String, tool_name: String) -> Self {
+        Self {
+            hermodr_url,
+            tenant_id,
+            tool_name,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(45))
+                .build()
+                .expect("reqwest client build"),
+        }
+    }
+
+    pub async fn call(&self, args: ExtractorArgs) -> Result<String, std::io::Error> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": self.tool_name,
+                "arguments": { "query": args.query }
+            },
+        });
+        let resp = self
+            .client
+            .post(&self.hermodr_url)
+            .header("Content-Type", "application/json")
+            .header("X-Tenant-Id", &self.tenant_id)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("hermodr-kb post: {e}")))?;
+        let status = resp.status();
+        let envelope: serde_json::Value = resp.json().await.map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("hermodr-kb json: {e}"))
+        })?;
+        if !status.is_success() || envelope.get("error").is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("hermodr-kb {} err: {}", self.tool_name, envelope),
+            ));
+        }
+        let inner = envelope
+            .pointer("/result/content/0/text")
+            .and_then(|v| v.as_str());
+        Ok(inner.map(|s| s.to_string()).unwrap_or_else(|| envelope.to_string()))
+    }
+}
+
+/// Query-based KB tools that can be auto-injected from a user query (no
+/// structured args needed). Maps agent_configs.tools name → human label.
+pub fn kb_tool_label(name: &str) -> Option<&'static str> {
+    match name {
+        "search_primekg" => Some("PrimeKG Knowledge Graph"),
+        "primekg_disease_relations" => Some("PrimeKG Disease Relations"),
+        "search_clinical_kb" => Some("Clinical Knowledge Base"),
+        "snomed_search" | "resolve_snomed" => Some("SNOMED CT"),
+        "pubmed_search" => Some("PubMed"),
+        _ => None,
+    }
+}
