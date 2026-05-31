@@ -6,7 +6,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 use uuid::Uuid;
 
 /// A skill improvement proposal from an agent
@@ -58,7 +58,7 @@ pub async fn agent_self_evaluate(
     agent_name: &str,
 ) -> Result<Option<SkillImprovementProposal>, sqlx::Error> {
     // Get daily metrics
-    let metrics = sqlx::query!(
+    let metrics_row = sqlx::query(
         r#"
         SELECT
             conversation_count,
@@ -70,20 +70,23 @@ pub async fn agent_self_evaluate(
         WHERE agent_id = ? AND tenant_id = ?
         ORDER BY metric_date DESC
         LIMIT 1
-        "#,
-        agent_id,
-        tenant_id
+        "#
     )
+    .bind(agent_id)
+    .bind(tenant_id)
     .fetch_optional(pool)
     .await?;
 
-    let metrics = match metrics {
+    let metrics_row = match metrics_row {
         Some(m) => m,
         None => return Ok(None), // No metrics yet
     };
 
-    let avg_quality = metrics.avg_quality_score.unwrap_or(0.5) as f32;
-    let improvement_opp = metrics.improvement_opportunity_score.unwrap_or(0.0) as f32;
+    let avg_quality_opt: Option<f64> = metrics_row.get("avg_quality_score");
+    let improvement_opp_opt: Option<f64> = metrics_row.get("improvement_opportunity_score");
+
+    let avg_quality = avg_quality_opt.unwrap_or(0.5) as f32;
+    let improvement_opp = improvement_opp_opt.unwrap_or(0.0) as f32;
 
     // Only propose improvement if opportunity score > 0.6
     // (means quality is low or variable across domains)
@@ -97,14 +100,13 @@ pub async fn agent_self_evaluate(
     }
 
     // Get weak areas in detail
-    let weak_areas = sqlx::query_as!(
-        WeakArea,
+    let weak_area_rows = sqlx::query(
         r#"
         SELECT
-            feedback_domain as "domain!",
-            AVG(quality_score) as "current_quality!",
-            COUNT(*) as "conversation_count!",
-            MAX(0.0) as "improvement_needed!"
+            feedback_domain,
+            AVG(quality_score) as current_quality,
+            COUNT(*) as conversation_count,
+            0.0 as improvement_needed
         FROM agent_feedback_logs
         WHERE agent_id = ? AND tenant_id = ?
           AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
@@ -112,12 +114,28 @@ pub async fn agent_self_evaluate(
         GROUP BY feedback_domain
         ORDER BY AVG(quality_score) ASC
         LIMIT 3
-        "#,
-        agent_id,
-        tenant_id
+        "#
     )
+    .bind(agent_id)
+    .bind(tenant_id)
     .fetch_all(pool)
     .await?;
+
+    let weak_areas: Vec<WeakArea> = weak_area_rows
+        .into_iter()
+        .map(|row| {
+            let domain: String = row.get("feedback_domain");
+            let current_quality: f64 = row.get("current_quality");
+            let conversation_count: i64 = row.get("conversation_count");
+
+            WeakArea {
+                domain,
+                current_quality: current_quality as f32,
+                conversation_count: conversation_count as i32,
+                improvement_needed: 0.0,
+            }
+        })
+        .collect();
 
     if weak_areas.is_empty() {
         return Ok(None);

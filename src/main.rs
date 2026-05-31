@@ -357,7 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // /v1/agent-groups* sub-router: JWT + rate-limit applied
     let agent_groups_router = agent_groups::build_router(state.pool.clone(), auth_state, 60);
 
-    let rl_admin_router = rl_admin_routes::build_rl_admin_router(pool.clone());
+    let rl_admin_router = rl_admin_routes::build_rl_admin_router(pool.clone(), state.overseer.clone());
 
     // Serve static files from /app/public (Odin dashboard React assets)
     let serve_dir = ServeDir::new("public").not_found_service(

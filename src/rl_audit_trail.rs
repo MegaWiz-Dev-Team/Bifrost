@@ -13,7 +13,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuditEventType {
@@ -466,12 +466,11 @@ pub async fn get_audit_trail(
     tenant_id: &str,
     proposal_id: &str,
 ) -> Result<Vec<AuditEntry>, sqlx::Error> {
-    let entries = sqlx::query_as!(
-        AuditEntry,
+    let rows = sqlx::query(
         r#"
         SELECT
             tenant_id,
-            event_type as "event_type: String",
+            event_type,
             agent_id,
             agent_name,
             proposal_id,
@@ -484,17 +483,29 @@ pub async fn get_audit_trail(
         FROM agent_rl_audit_trail
         WHERE tenant_id = ? AND proposal_id = ?
         ORDER BY created_at ASC
-        "#,
-        tenant_id,
-        proposal_id
+        "#
     )
+    .bind(tenant_id)
+    .bind(proposal_id)
     .fetch_all(pool)
     .await?;
 
-    Ok(entries
+    let entries = rows
         .into_iter()
-        .map(|e| {
-            let event_type = match e.event_type.as_str() {
+        .map(|row| {
+            let tenant: String = row.get("tenant_id");
+            let event_type_str: String = row.get("event_type");
+            let agent_id: i64 = row.get("agent_id");
+            let agent_name: String = row.get("agent_name");
+            let proposal_id: Option<String> = row.get("proposal_id");
+            let event_details: serde_json::Value = row.get("event_details");
+            let actor_agent_id: i64 = row.get("actor_agent_id");
+            let actor_agent_name: String = row.get("actor_agent_name");
+            let impact_summary: String = row.get("impact_summary");
+            let compliance_flags_str: Option<String> = row.get("compliance_flags");
+            let created_at: chrono::DateTime<Utc> = row.get("created_at");
+
+            let event_type = match event_type_str.as_str() {
                 "AGENT_SELF_EVAL" => AuditEventType::AgentSelfEval,
                 "PROPOSAL_SUBMITTED" => AuditEventType::ProposalSubmitted,
                 "ODIN_VOTE" => AuditEventType::OdinVote,
@@ -507,21 +518,27 @@ pub async fn get_audit_trail(
                 "DEPLOYMENT_COMPLETE" => AuditEventType::DeploymentComplete,
                 _ => AuditEventType::ProposalRejected,
             };
+
+            let compliance_flags = compliance_flags_str
+                .and_then(|f| serde_json::from_str::<Vec<String>>(f.as_str()).ok());
+
             AuditEntry {
-                tenant_id: e.tenant_id,
+                tenant_id: tenant,
                 event_type,
-                agent_id: e.agent_id,
-                agent_name: e.agent_name,
-                proposal_id: e.proposal_id,
-                event_details: e.event_details,
-                actor_agent_id: e.actor_agent_id,
-                actor_agent_name: e.actor_agent_name,
-                impact_summary: e.impact_summary,
-                compliance_flags: e.compliance_flags.and_then(|f| serde_json::from_str::<Vec<String>>(f.as_str()).ok()),
-                created_at: e.created_at,
+                agent_id,
+                agent_name,
+                proposal_id,
+                event_details,
+                actor_agent_id,
+                actor_agent_name,
+                impact_summary,
+                compliance_flags,
+                created_at,
             }
         })
-        .collect())
+        .collect();
+
+    Ok(entries)
 }
 
 /// Export audit trail for compliance reporting
@@ -529,7 +546,7 @@ pub async fn export_compliance_report(
     pool: &MySqlPool,
     tenant_id: &str,
 ) -> Result<Value, sqlx::Error> {
-    let entries = sqlx::query!(
+    let rows = sqlx::query(
         r#"
         SELECT
             event_type,
@@ -539,24 +556,30 @@ pub async fn export_compliance_report(
         FROM agent_rl_audit_trail
         WHERE tenant_id = ?
         GROUP BY event_type
-        "#,
-        tenant_id
+        "#
     )
+    .bind(tenant_id)
     .fetch_all(pool)
     .await?;
+
+    let event_summaries: Vec<_> = rows.iter().map(|row| {
+        let event_type: String = row.get("event_type");
+        let event_count: i64 = row.get("event_count");
+        let agents_affected: i64 = row.get("agents_affected");
+
+        json!({
+            "type": event_type,
+            "count": event_count,
+            "agents_affected": agents_affected
+        })
+    }).collect();
 
     let report = json!({
         "tenant_id": tenant_id,
         "generated_at": Utc::now().to_rfc3339(),
         "summary": {
-            "total_entries": entries.len(),
-            "events_by_type": entries.iter().map(|e| {
-                json!({
-                    "type": e.event_type,
-                    "count": e.event_count,
-                    "agents_affected": e.agents_affected
-                })
-            }).collect::<Vec<_>>()
+            "total_entries": rows.len(),
+            "events_by_type": event_summaries
         }
     });
 

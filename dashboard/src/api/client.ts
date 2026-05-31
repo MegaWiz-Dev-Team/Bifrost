@@ -15,7 +15,7 @@ async function apiCall<T>(
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
-    'X-Tenant-Id': localStorage.getItem('tenantId') || 'asgard_medical',
+    'X-Tenant-Id': localStorage.getItem('tenantId') || 'asgard_platform',
     ...options?.headers,
   };
 
@@ -31,8 +31,25 @@ async function apiCall<T>(
   return response.json();
 }
 
+export interface ChatRequest {
+  message: string;
+}
+
+export interface ChatResponse {
+  reply: string;
+  executed?: boolean;
+  result?: string;
+}
+
 // API Functions
 export const rlApi = {
+  // Chat with Odin
+  chatWithOdin: (message: string) =>
+    apiCall<ChatResponse>('/api/v1/odin/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
+
   // Get pending proposals
   getPendingProposals: (status?: string, page?: number) =>
     apiCall<PendingProposalsResponse>(

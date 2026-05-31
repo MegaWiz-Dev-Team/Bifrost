@@ -9,7 +9,7 @@
 //! Scores stored in mimir.agent_feedback_logs for downstream RL analysis
 
 use serde::{Deserialize, Serialize};
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 use uuid::Uuid;
 
 /// Feedback for a single A2A dispatch
@@ -183,7 +183,7 @@ pub async fn compute_daily_metrics(
     agent_id: i64,
 ) -> Result<(), sqlx::Error> {
     // Aggregate last 24h feedback
-    let metrics = sqlx::query!(
+    let metrics_row = sqlx::query(
         r#"
         SELECT
             COUNT(*) as conversation_count,
@@ -195,15 +195,17 @@ pub async fn compute_daily_metrics(
         WHERE agent_id = ?
           AND tenant_id = ?
           AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        "#,
-        agent_id,
-        tenant_id
+        "#
     )
+    .bind(agent_id)
+    .bind(tenant_id)
     .fetch_one(pool)
     .await?;
 
+    let _conversation_count: i64 = metrics_row.get("conversation_count");
+
     // Find weakest domain
-    let weak_domain = sqlx::query!(
+    let weak_domain_row = sqlx::query(
         r#"
         SELECT
             feedback_domain,
@@ -216,16 +218,18 @@ pub async fn compute_daily_metrics(
         GROUP BY feedback_domain
         ORDER BY avg_quality ASC
         LIMIT 1
-        "#,
-        agent_id,
-        tenant_id
+        "#
     )
+    .bind(agent_id)
+    .bind(tenant_id)
     .fetch_optional(pool)
     .await?;
 
+    let weak_domain_name = weak_domain_row.as_ref().map(|r| r.get::<String, _>("feedback_domain"));
+
     // Calculate improvement opportunity score
     // Higher variance in quality = more opportunity to improve
-    let improvement_opp = sqlx::query!(
+    let improvement_opp_row = sqlx::query(
         r#"
         SELECT
             AVG(quality_score) as avg_quality,
@@ -234,17 +238,22 @@ pub async fn compute_daily_metrics(
         WHERE agent_id = ?
           AND tenant_id = ?
           AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        "#,
-        agent_id,
-        tenant_id
+        "#
     )
+    .bind(agent_id)
+    .bind(tenant_id)
     .fetch_one(pool)
     .await?;
 
+    let avg_quality: Option<f64> = improvement_opp_row.get("avg_quality");
+    let quality_stddev: Option<f64> = improvement_opp_row.get("quality_stddev");
+
     // Improvement opportunity = 1.0 - (avg_quality / 1.0) + stddev (domains vary)
-    let avg_qual = improvement_opp.avg_quality.unwrap_or(0.5) as f32;
-    let stddev = improvement_opp.quality_stddev.unwrap_or(0.0) as f32;
+    let avg_qual = avg_quality.unwrap_or(0.5) as f32;
+    let stddev = quality_stddev.unwrap_or(0.0) as f32;
     let improvement_score = (1.0 - avg_qual) + (stddev * 0.5);
+
+    let weak_domain_score = weak_domain_row.as_ref().map(|r| r.get::<Option<f64>, _>("avg_quality")).flatten();
 
     // Upsert daily metrics
     sqlx::query(
@@ -261,14 +270,14 @@ pub async fn compute_daily_metrics(
             lowest_quality_domain = VALUES(lowest_quality_domain),
             lowest_quality_score = VALUES(lowest_quality_score),
             improvement_opportunity_score = VALUES(improvement_opportunity_score)
-        "#,
+        "#
     )
     .bind(tenant_id)
     .bind(agent_id)
-    .bind(metrics.conversation_count)
+    .bind(_conversation_count)
     .bind(avg_qual)
-    .bind(weak_domain.as_ref().map(|w| w.feedback_domain.as_ref()))
-    .bind(weak_domain.as_ref().map(|w| w.avg_quality))
+    .bind(&weak_domain_name)
+    .bind(weak_domain_score)
     .bind(improvement_score)
     .execute(pool)
     .await?;
@@ -276,7 +285,7 @@ pub async fn compute_daily_metrics(
     tracing::info!(
         "Daily metrics computed: agent={}, conversations={}, avg_quality={:.2}, improvement_score={:.2}",
         agent_id,
-        metrics.conversation_count.unwrap_or(0),
+        _conversation_count,
         avg_qual,
         improvement_score
     );

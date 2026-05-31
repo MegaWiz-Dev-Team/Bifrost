@@ -16,7 +16,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 
 use crate::rl_agent_self_eval::SkillImprovementProposal;
 
@@ -347,20 +347,21 @@ fn validate_agent_domain(agent_id: i64, improvement_type: &str) -> bool {
 }
 
 async fn has_conflicting_deployment(pool: &MySqlPool, agent_id: i64) -> Result<bool, sqlx::Error> {
-    let conflict = sqlx::query!(
+    let row = sqlx::query(
         r#"
         SELECT COUNT(*) as conflict_count
         FROM skill_deployment_log
         WHERE agent_id = ?
           AND status IN ('CANARY_IN_PROGRESS', 'STAGED_IN_PROGRESS')
           AND updated_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        "#,
-        agent_id
+        "#
     )
+    .bind(agent_id)
     .fetch_one(pool)
     .await?;
 
-    Ok(conflict.conflict_count.unwrap_or(0) > 0)
+    let conflict_count: i64 = row.get("conflict_count");
+    Ok(conflict_count > 0)
 }
 
 fn validate_frigg_expertise(proposal: &SkillImprovementProposal) -> bool {

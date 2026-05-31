@@ -125,7 +125,7 @@ spec:
 
       containers:
         - name: bifrost
-          image: ghcr.io/asgard-ai/bifrost:latest
+          image: localhost:30475/bifrost:all-agents
           imagePullPolicy: Always
 
           ports:

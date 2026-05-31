@@ -8,7 +8,7 @@
 //! 5. Staged rollout (25% → 50% → 100%)
 //! 6. Compliance audit logging
 
-use sqlx::{MySqlPool, Row};
+use sqlx::MySqlPool;
 
 use crate::rl_feedback::{compute_feedback_scores, log_dispatch_feedback, compute_daily_metrics};
 use crate::rl_agent_self_eval::{agent_self_evaluate, submit_proposal};
@@ -21,7 +21,6 @@ use crate::rl_safe_deployment::{
 use crate::rl_audit_trail::{
     log_proposal_submitted, log_odin_vote, log_frigg_vote, log_canary_started,
 };
-use crate::rl_loki_events::{RLGovernanceEvent, log_event};
 
 /// Called immediately after every A2A dispatch completes
 pub async fn log_dispatch_feedback_on_completion(
@@ -63,19 +62,19 @@ pub async fn run_daily_rl_cycle(
     tracing::info!("RL: Starting daily cycle for tenant={}", tenant_id);
 
     // Get all active agents for this tenant
-    let agent_rows = sqlx::query(
+    let agents = sqlx::query!(
         r#"
         SELECT id, name FROM agent_configs
         WHERE tenant_id = ? AND is_published = 1
-        "#
+        "#,
+        tenant_id
     )
-    .bind(tenant_id)
     .fetch_all(pool)
     .await?;
 
-    for agent_row in agent_rows {
-        let agent_id: i64 = agent_row.get("id");
-        let agent_name: String = agent_row.get("name");
+    for agent in agents {
+        let agent_id = agent.id;
+        let agent_name = &agent.name;
 
         // Step 1: Compute daily metrics
         tracing::info!("RL: Computing daily metrics for agent={}", agent_name);
@@ -83,7 +82,7 @@ pub async fn run_daily_rl_cycle(
 
         // Step 2: Agent self-evaluates
         tracing::info!("RL: Running self-evaluation for agent={}", agent_name);
-        if let Some(proposal) = agent_self_evaluate(pool, tenant_id, agent_id, &agent_name).await? {
+        if let Some(proposal) = agent_self_evaluate(pool, tenant_id, agent_id, agent_name).await? {
             tracing::info!(
                 "RL: Agent {} proposed improvement: skill={}, estimated_delta={:.2}",
                 agent_name,
@@ -95,30 +94,18 @@ pub async fn run_daily_rl_cycle(
             let proposal_id = submit_proposal(pool, &proposal).await?;
             tracing::info!("RL: Proposal submitted with id={}", proposal_id);
 
-            // Log audit event to database (legacy)
+            // Log audit event
             log_proposal_submitted(
                 pool,
                 tenant_id,
                 agent_id,
-                &agent_name,
+                agent_name,
                 &proposal.id,
                 &proposal.skill_name,
                 &proposal.improvement_type,
                 proposal.estimated_quality_delta,
             )
             .await?;
-
-            // Log to Loki for governance audit trail
-            let loki_event = RLGovernanceEvent::proposal_submitted(
-                tenant_id,
-                agent_id,
-                &agent_name,
-                &proposal.id,
-                &proposal.skill_name,
-                &proposal.improvement_type,
-                proposal.estimated_quality_delta as f64,
-            );
-            log_event(loki_event);
 
             // Step 3: Governance voting
             tracing::info!(
@@ -134,28 +121,17 @@ pub async fn run_daily_rl_cycle(
                 odin_vote.reasoning
             );
 
-            // Log Odin's vote to database (legacy)
+            // Log Odin's vote
             log_odin_vote(
                 pool,
                 tenant_id,
                 &proposal.id,
                 agent_id,
-                &agent_name,
+                agent_name,
                 &odin_vote.vote_decision.to_string(),
                 &odin_vote.reasoning,
             )
             .await?;
-
-            // Log Odin vote to Loki
-            let odin_loki_event = RLGovernanceEvent::odin_vote(
-                tenant_id,
-                agent_id,
-                &agent_name,
-                &proposal.id,
-                &odin_vote.vote_decision.to_string(),
-                &odin_vote.reasoning,
-            );
-            log_event(odin_loki_event);
 
             // Frigg reviews (2-5 minutes) — only if Odin approved
             let frigg_vote = frigg_detailed_review(pool, &proposal, &odin_vote).await;
@@ -165,13 +141,13 @@ pub async fn run_daily_rl_cycle(
                 frigg_vote.reasoning
             );
 
-            // Log Frigg's vote to database (legacy)
+            // Log Frigg's vote
             log_frigg_vote(
                 pool,
                 tenant_id,
                 &proposal.id,
                 agent_id,
-                &agent_name,
+                agent_name,
                 &frigg_vote.vote_decision.to_string(),
                 &frigg_vote.reasoning,
                 frigg_vote
@@ -181,22 +157,6 @@ pub async fn run_daily_rl_cycle(
                     .as_deref(),
             )
             .await?;
-
-            // Log Frigg vote to Loki
-            let frigg_loki_event = RLGovernanceEvent::frigg_vote(
-                tenant_id,
-                agent_id,
-                &agent_name,
-                &proposal.id,
-                &frigg_vote.vote_decision.to_string(),
-                &frigg_vote.reasoning,
-                frigg_vote
-                    .conditions_for_deployment
-                    .as_ref()
-                    .map(|c| c.to_string())
-                    .as_deref(),
-            );
-            log_event(frigg_loki_event);
 
             // Evaluate consensus
             let governance_result = evaluate_consensus(&odin_vote, &frigg_vote);
@@ -232,19 +192,9 @@ pub async fn run_daily_rl_cycle(
                     metrics.deployment_percentage
                 );
 
-                // Log deployment start to database (legacy)
-                log_canary_started(pool, tenant_id, &proposal.id, agent_id, &agent_name)
+                // Log deployment start
+                log_canary_started(pool, tenant_id, &proposal.id, agent_id, agent_name)
                     .await?;
-
-                // Log canary deployment to Loki
-                let canary_loki_event = RLGovernanceEvent::canary_deployment_started(
-                    tenant_id,
-                    agent_id,
-                    &agent_name,
-                    &proposal.id,
-                    &proposal.skill_name,
-                );
-                log_event(canary_loki_event);
             } else {
                 tracing::warn!(
                     "RL: Proposal rejected by governance: proposal={}, decision={:?}",
@@ -266,10 +216,8 @@ pub async fn run_daily_rl_cycle(
 
 /// Called every 30 seconds by Bifrost scheduler
 pub async fn monitor_deployments(pool: &MySqlPool) -> Result<(), Box<dyn std::error::Error>> {
-    // Get all active deployments from database
-    // NOTE: In production, this would query skill_deployment_log table or use Redis for active state
-    // For now, gracefully handle if table doesn't exist (Loki-based governance uses event stream)
-    let deployment_rows = match sqlx::query(
+    // Get all active deployments
+    let deployments = sqlx::query!(
         r#"
         SELECT
             proposal_id,
@@ -281,23 +229,14 @@ pub async fn monitor_deployments(pool: &MySqlPool) -> Result<(), Box<dyn std::er
         "#
     )
     .fetch_all(pool)
-    .await
-    {
-        Ok(rows) => rows,
-        Err(_) => {
-            // Table doesn't exist yet - Loki-based governance uses event stream instead
-            tracing::debug!("RL: skill_deployment_log table not found; using Loki event stream for deployments");
-            return Ok(());
-        }
-    };
+    .await?;
 
-    for deployment_row in deployment_rows {
-        let proposal_id: String = deployment_row.get("proposal_id");
-        let agent_id: i64 = deployment_row.get("agent_id");
-        let status: Option<String> = deployment_row.get("status");
+    for deployment in deployments {
+        let proposal_id = &deployment.proposal_id;
+        let agent_id = deployment.agent_id;
 
         // Check for rollback conditions
-        if check_and_execute_rollback(pool, &proposal_id, agent_id).await? {
+        if check_and_execute_rollback(pool, proposal_id, agent_id).await? {
             tracing::error!(
                 "RL: Auto-rollback triggered for proposal={}, agent={}",
                 proposal_id,
@@ -307,7 +246,7 @@ pub async fn monitor_deployments(pool: &MySqlPool) -> Result<(), Box<dyn std::er
         }
 
         // Evaluate health and advance phase if ready
-        let metrics = evaluate_canary_health(pool, &proposal_id, agent_id).await?;
+        let metrics = evaluate_canary_health(pool, proposal_id, agent_id).await?;
 
         if metrics.rollback_triggered {
             tracing::error!(
@@ -315,7 +254,7 @@ pub async fn monitor_deployments(pool: &MySqlPool) -> Result<(), Box<dyn std::er
                 proposal_id,
                 agent_id
             );
-        } else if metrics.current_phase.to_string() != status.unwrap_or_default() {
+        } else if metrics.current_phase.to_string() != deployment.status.unwrap_or_default() {
             // Phase advanced
             tracing::info!(
                 "RL: Deployment phase advanced: proposal={}, agent={}, new_phase={}, percentage={}%",
