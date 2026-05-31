@@ -609,12 +609,20 @@ impl MimirKbSearchTool {
         // inject noise on natural-language queries (e.g. "first-line drug" →
         // "BEPANTHEN FIRST AID") and belong to the deterministic coding path
         // (Iris), not chat grounding. Guards the -9pp naive-RAG regression.
-        const KB_ALLOW: &[&str] = &["icd10-tm", "primekg", "symptoms"];
+        // Whitelist is env-configurable for A/B sweeps (KB_ALLOW_KBS=comma list,
+        // "none" = inject nothing). Default = clinical-grounding KBs.
+        let allow_env = std::env::var("KB_ALLOW_KBS")
+            .unwrap_or_else(|_| "icd10-tm,primekg,symptoms".to_string());
+        let kb_allow: Vec<&str> = if allow_env.trim().eq_ignore_ascii_case("none") {
+            Vec::new()
+        } else {
+            allow_env.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+        };
         let mut out = String::new();
         if let Some(results) = v.get("results").and_then(|r| r.as_array()) {
             for kb in results {
                 let kb_id = kb.get("kb_id").and_then(|i| i.as_str()).unwrap_or("");
-                if !KB_ALLOW.contains(&kb_id) {
+                if !kb_allow.contains(&kb_id) {
                     continue; // skip code-master / noise KBs
                 }
                 let items = match kb.get("items").and_then(|i| i.as_array()) {
