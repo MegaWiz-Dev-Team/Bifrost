@@ -534,11 +534,16 @@ impl HermodrKbTool {
 /// structured args needed). Maps agent_configs.tools name → human label.
 pub fn kb_tool_label(name: &str) -> Option<&'static str> {
     match name {
-        "search_primekg" => Some("PrimeKG Knowledge Graph"),
+        // Aliases tolerate UI/runtime naming drift: the Agent Studio tool picker
+        // historically emitted `primekg_search` / `clinical_kb_search` (now fixed
+        // to `search_*`). Accept both spellings so an agent saved through either
+        // vintage of the UI still grounds. Keep new alias pairs here rather than
+        // letting a name mismatch silently disable KB grounding.
+        "search_primekg" | "primekg_search" => Some("PrimeKG Knowledge Graph"),
         "primekg_disease_relations" => Some("PrimeKG Disease Relations"),
-        "search_clinical_kb" => Some("Clinical Knowledge Base"),
-        "snomed_search" | "resolve_snomed" => Some("SNOMED CT"),
-        "pubmed_search" => Some("PubMed"),
+        "search_clinical_kb" | "clinical_kb_search" => Some("Clinical Knowledge Base"),
+        "snomed_search" | "resolve_snomed" | "search_snomed" => Some("SNOMED CT"),
+        "pubmed_search" | "search_pubmed" => Some("PubMed"),
         _ => None,
     }
 }
