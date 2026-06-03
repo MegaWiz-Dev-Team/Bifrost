@@ -1,4 +1,5 @@
 pub mod context;
+pub mod mcp;
 pub mod skills;
 pub mod souls;
 pub mod overseer;

@@ -23,6 +23,7 @@ struct AgentConfigRow {
     temperature: Option<f64>,
     rag_params: Option<serde_json::Value>,
     tools: Option<serde_json::Value>,
+    mcp_servers: Option<serde_json::Value>,
 }
 use crate::memory::memvid_manager::MemvidManager;
 use crate::memory::tool::MemvidSearchTool;
@@ -97,7 +98,7 @@ impl OverseerManager {
 
         // 1. Fetch Agent Config from Database
         let agent_row: Option<AgentConfigRow> = sqlx::query_as(
-            "SELECT system_prompt, model_id, provider, use_rag, use_knowledge_graph, use_pageindex, CAST(temperature AS DOUBLE) as temperature, rag_params, tools FROM agent_configs WHERE id = ? AND tenant_id = ?"
+            "SELECT system_prompt, model_id, provider, use_rag, use_knowledge_graph, use_pageindex, CAST(temperature AS DOUBLE) as temperature, rag_params, tools, mcp_servers FROM agent_configs WHERE id = ? AND tenant_id = ?"
         )
         .bind(agent_id)
         .bind(tenant_id)
@@ -105,10 +106,15 @@ impl OverseerManager {
         .await?;
 
         // Fallback to Overseer generic values if agent not found
-        let (system_prompt, model_name, provider, use_rag, use_kg, use_tree, rag_params, agent_tools) = match agent_row {
+        let (system_prompt, model_name, provider, use_rag, use_kg, use_tree, rag_params, agent_tools, agent_mcp_servers) = match agent_row {
             Some(agent) => {
                 // Parse tools JSON array into Vec<String>
                 let tools_list: Vec<String> = agent.tools
+                    .as_ref()
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_default();
+                // Parse mcp_servers JSON array into Vec<String>
+                let mcp_list: Vec<String> = agent.mcp_servers
                     .as_ref()
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .unwrap_or_default();
@@ -136,6 +142,7 @@ impl OverseerManager {
                     r, k, t,
                     agent.rag_params,
                     tools_list,
+                    mcp_list,
                 )
             },
             None => {
@@ -144,7 +151,7 @@ impl OverseerManager {
                     super::souls::OVERSEER_SYSTEM_PROMPT.to_string(),
                     std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| generation_slot.model.clone()),
                     "heimdall".to_string(),
-                    true, true, true, None, vec![]
+                    true, true, true, None, vec![], vec![]
                 )
             }
         };
@@ -248,6 +255,9 @@ impl OverseerManager {
         use rig::tool::Tool;
         let bypass_tools = provider_lower == "gemini" || provider_lower == "heimdall" || model_name.contains("gemini");
         let mut manual_context = String::new();
+        // Set true once per-agent Hermodr MCP tools are attached — flips the
+        // bypass directive below so the model is allowed to call them.
+        let mut mcp_tools_attached = false;
 
         if use_rag {
             let vector_tool = super::skills::VectorSearchTool::new(
@@ -365,6 +375,60 @@ impl OverseerManager {
             }
         }
 
+        // Per-agent MCP tools (Hermodr-scoped). Each `mcp_servers` entry is
+        // resolved through the Hermodr security gate (only hermodr-* targets),
+        // its tools discovered via MCP tools/list, and registered as rig tools.
+        // Tool-calling in this structured-output swarm is reliable on Gemini
+        // (and on non-bypass local models); MLX gemma tool-calling is not, so
+        // for those we discover + warn rather than attach.
+        if !agent_mcp_servers.is_empty() {
+            let mcp_capable = !bypass_tools
+                || provider_lower == "gemini"
+                || model_name.contains("gemini");
+            let disco_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .expect("reqwest client build");
+            for entry in &agent_mcp_servers {
+                let Some(url) = super::mcp::resolve_hermodr_url(entry) else {
+                    tracing::warn!(
+                        agent_id = agent_id, tenant_id = tenant_id, mcp_server = entry.as_str(),
+                        "mcp_servers entry rejected — only Hermodr (hermodr-*) targets are allowed"
+                    );
+                    continue;
+                };
+                if !mcp_capable {
+                    tracing::warn!(
+                        agent_id = agent_id, tenant_id = tenant_id, mcp_server = entry.as_str(), model = %model_name,
+                        "Hermodr mcp_server configured but model does not support tool-calling in the swarm (MLX) — tools not attached"
+                    );
+                    continue;
+                }
+                match super::mcp::hermodr_list_tools(&disco_client, &url, tenant_id).await {
+                    Ok(tools) if !tools.is_empty() => {
+                        for t in tools {
+                            tracing::info!(
+                                agent_id = agent_id, tenant_id = tenant_id,
+                                mcp_server = entry.as_str(), tool = t.name.as_str(),
+                                "Attaching Hermodr MCP tool"
+                            );
+                            builder = builder.tool(super::mcp::HermodrMcpTool::new(
+                                url.clone(), tenant_id.to_string(),
+                                t.name, t.description, t.schema,
+                            ));
+                            mcp_tools_attached = true;
+                        }
+                    }
+                    Ok(_) => tracing::warn!(
+                        mcp_server = entry.as_str(), "Hermodr tools/list returned no tools"
+                    ),
+                    Err(e) => tracing::warn!(
+                        mcp_server = entry.as_str(), error = %e, "Hermodr tools/list failed"
+                    ),
+                }
+            }
+        }
+
         let overseer_agent = builder.build();
 
         // Rig-Guard: Medical Privacy Shield
@@ -412,7 +476,7 @@ impl OverseerManager {
         // above and the model CANNOT execute further tools. Forbid action_required
         // so it answers directly instead of returning a "request a search" stub
         // (root cause of the 32-40% action_required non-answer rate).
-        let augmented_query = if bypass_tools {
+        let augmented_query = if bypass_tools && !mcp_tools_attached {
             format!(
                 "{augmented_query}\n\nIMPORTANT: All the context you need is provided above. \
                  Answer the query DIRECTLY now using that context and your medical knowledge. \
