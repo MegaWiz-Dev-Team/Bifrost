@@ -463,3 +463,188 @@ impl Tool for OcrExtractTool {
         }
     }
 }
+
+// ─────────────────────────── HermodrKbTool ────────────────────────────────
+// Generic medical knowledge-base tool. Calls a query-based Hermodr MCP tool
+// (served by hermodr-mimir → Mimir Neo4j/Qdrant/mariadb masters) and returns
+// its text payload. One struct covers R2 (code/text resolvers) + R3 (PrimeKG
+// graph) because every such tool takes a single `query` argument and Hermodr
+// wraps the reply the same way. Heimdall agents (bypass_tools) call this in
+// the manual-context path; the result is injected before generation.
+//
+//   PrimeKG (R3, Neo4j-backed):  search_primekg, primekg_disease_relations
+//   Resolvers (R2):              search_clinical_kb, snomed_search, ...
+pub struct HermodrKbTool {
+    hermodr_url: String,
+    tenant_id: String,
+    tool_name: String,
+    client: reqwest::Client,
+}
+
+impl HermodrKbTool {
+    pub fn new(hermodr_url: String, tenant_id: String, tool_name: String) -> Self {
+        Self {
+            hermodr_url,
+            tenant_id,
+            tool_name,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(45))
+                .build()
+                .expect("reqwest client build"),
+        }
+    }
+
+    pub async fn call(&self, args: ExtractorArgs) -> Result<String, std::io::Error> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": self.tool_name,
+                "arguments": { "query": args.query }
+            },
+        });
+        let resp = self
+            .client
+            .post(&self.hermodr_url)
+            .header("Content-Type", "application/json")
+            .header("X-Tenant-Id", &self.tenant_id)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("hermodr-kb post: {e}")))?;
+        let status = resp.status();
+        let envelope: serde_json::Value = resp.json().await.map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("hermodr-kb json: {e}"))
+        })?;
+        if !status.is_success() || envelope.get("error").is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("hermodr-kb {} err: {}", self.tool_name, envelope),
+            ));
+        }
+        let inner = envelope
+            .pointer("/result/content/0/text")
+            .and_then(|v| v.as_str());
+        Ok(inner.map(|s| s.to_string()).unwrap_or_else(|| envelope.to_string()))
+    }
+}
+
+/// Query-based KB tools that can be auto-injected from a user query (no
+/// structured args needed). Maps agent_configs.tools name → human label.
+pub fn kb_tool_label(name: &str) -> Option<&'static str> {
+    match name {
+        // Aliases tolerate UI/runtime naming drift: the Agent Studio tool picker
+        // historically emitted `primekg_search` / `clinical_kb_search` (now fixed
+        // to `search_*`). Accept both spellings so an agent saved through either
+        // vintage of the UI still grounds. Keep new alias pairs here rather than
+        // letting a name mismatch silently disable KB grounding.
+        "search_primekg" | "primekg_search" => Some("PrimeKG Knowledge Graph"),
+        "primekg_disease_relations" => Some("PrimeKG Disease Relations"),
+        "search_clinical_kb" | "clinical_kb_search" => Some("Clinical Knowledge Base"),
+        "snomed_search" | "resolve_snomed" | "search_snomed" => Some("SNOMED CT"),
+        "pubmed_search" | "search_pubmed" => Some("PubMed"),
+        _ => None,
+    }
+}
+
+// ─────────────────────────── MimirKbSearchTool ────────────────────────────
+// Single unified medical-KB grounding call. Hits Mimir's live cross-KB search
+// (`GET {MIMIR_URL}/api/v1/knowledge/search?q=&k=`) which fans out across
+// ICD-10-TM, PrimeKG, LOINC, TMT/TMLT, TPC, SNOMED, abbrev — already deployed,
+// no Mimir rebuild needed. Relevance gating is built in: KBs with 0 hits are
+// omitted by the endpoint AND skipped here, and total length is capped to keep
+// noise out of the prompt (guards the known -9pp naive-RAG regression).
+pub struct MimirKbSearchTool {
+    mimir_url: String,
+    tenant_id: String,
+    k: u32,
+    client: reqwest::Client,
+}
+
+impl MimirKbSearchTool {
+    pub fn new(mimir_url: String, tenant_id: String, k: u32) -> Self {
+        Self {
+            mimir_url,
+            tenant_id,
+            k,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(20))
+                .build()
+                .expect("reqwest client build"),
+        }
+    }
+
+    fn fmt_item(it: &serde_json::Value) -> String {
+        let s = |k: &str| it.get(k).and_then(|v| v.as_str());
+        let code = s("code").or_else(|| s("code_formatted"));
+        let en = s("en_label").or_else(|| s("name")).or_else(|| s("label")).or_else(|| s("display"));
+        let th = s("th_label");
+        match (code, en, th) {
+            (Some(c), Some(e), Some(t)) => format!("  • {c} — {e} / {t}"),
+            (Some(c), Some(e), None) => format!("  • {c} — {e}"),
+            (None, Some(e), Some(t)) => format!("  • {e} / {t}"),
+            (None, Some(e), None) => format!("  • {e}"),
+            (Some(c), None, _) => format!("  • {c}"),
+            _ => format!("  • {}", it.to_string().chars().take(140).collect::<String>()),
+        }
+    }
+
+    pub async fn call(&self, args: ExtractorArgs) -> Result<String, std::io::Error> {
+        let url = format!("{}/api/v1/knowledge/search", self.mimir_url.trim_end_matches('/'));
+        let resp = self
+            .client
+            .get(&url)
+            .query(&[("q", args.query.as_str()), ("k", &self.k.to_string())])
+            .header("X-Tenant-Id", &self.tenant_id)
+            .send()
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("mimir-kb get: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("mimir-kb HTTP {}", resp.status()),
+            ));
+        }
+        let v: serde_json::Value = resp.json().await.map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("mimir-kb json: {e}"))
+        })?;
+        // Whitelist: only clinical-grounding KBs help chat reasoning. Drug/lab
+        // CODE masters (TMT/TMLT/TPC/LOINC) + abbrev are keyword-matchers that
+        // inject noise on natural-language queries (e.g. "first-line drug" →
+        // "BEPANTHEN FIRST AID") and belong to the deterministic coding path
+        // (Iris), not chat grounding. Guards the -9pp naive-RAG regression.
+        // Whitelist is env-configurable for A/B sweeps (KB_ALLOW_KBS=comma list,
+        // "none" = inject nothing). Default = clinical-grounding KBs.
+        let allow_env = std::env::var("KB_ALLOW_KBS")
+            .unwrap_or_else(|_| "icd10-tm,primekg,symptoms".to_string());
+        let kb_allow: Vec<&str> = if allow_env.trim().eq_ignore_ascii_case("none") {
+            Vec::new()
+        } else {
+            allow_env.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+        };
+        let mut out = String::new();
+        if let Some(results) = v.get("results").and_then(|r| r.as_array()) {
+            for kb in results {
+                let kb_id = kb.get("kb_id").and_then(|i| i.as_str()).unwrap_or("");
+                if !kb_allow.contains(&kb_id) {
+                    continue; // skip code-master / noise KBs
+                }
+                let items = match kb.get("items").and_then(|i| i.as_array()) {
+                    Some(a) if !a.is_empty() => a, // relevance gate: skip 0-hit KBs
+                    _ => continue,
+                };
+                let name = kb.get("kb_name").and_then(|n| n.as_str()).unwrap_or("KB");
+                out.push_str(&format!("{name}:\n"));
+                for it in items.iter().take(self.k as usize) {
+                    out.push_str(&Self::fmt_item(it));
+                    out.push('\n');
+                }
+                if out.len() > 2500 {
+                    break; // cap total grounding length
+                }
+            }
+        }
+        Ok(out)
+    }
+}

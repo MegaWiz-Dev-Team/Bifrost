@@ -1,0 +1,345 @@
+---
+# Bifrost RL Governance - Kubernetes Deployment Manifest
+# Deploys the Rust backend service for multi-agent RL governance
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: asgard-rl
+
+---
+# ConfigMap: Environment Variables for Bifrost
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bifrost-config
+  namespace: asgard-rl
+data:
+  RUST_LOG: "info"
+  LISTEN_ADDR: "0.0.0.0:8100"
+  DB_POOL_SIZE: "10"
+  SCHEDULER_ENABLED: "true"
+  DEPLOYMENT_MONITOR_INTERVAL_SECS: "30"
+  DAILY_RL_CYCLE_HOUR_UTC: "2"
+  CANARY_DURATION_HOURS: "2"
+  CANARY_MIN_REQUESTS: "100"
+  MEMVID_DATA_DIR: "/app/memvid"
+
+---
+# Secret: Database Credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bifrost-db-secret
+  namespace: asgard-rl
+type: Opaque
+stringData:
+  DATABASE_URL: "mysql://mimir:671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620@192.168.194.212:3306/mimir"
+  DB_USER: "mimir"
+  DB_PASSWORD: "671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620"
+
+---
+# Service: Expose Bifrost on port 8100
+apiVersion: v1
+kind: Service
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+  labels:
+    app: bifrost
+spec:
+  type: ClusterIP
+  selector:
+    app: bifrost
+  ports:
+    - name: http
+      port: 8100
+      targetPort: 8100
+      protocol: TCP
+
+---
+# Service for external access (optional NodePort)
+apiVersion: v1
+kind: Service
+metadata:
+  name: bifrost-external
+  namespace: asgard-rl
+  labels:
+    app: bifrost
+spec:
+  type: NodePort
+  selector:
+    app: bifrost
+  ports:
+    - name: http
+      port: 8100
+      targetPort: 8100
+      nodePort: 30100
+      protocol: TCP
+
+---
+# Deployment: Bifrost Backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+  labels:
+    app: bifrost
+    version: "0.3.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  selector:
+    matchLabels:
+      app: bifrost
+
+  template:
+    metadata:
+      labels:
+        app: bifrost
+      annotations:
+        description: "RL Governance Engine - Odin & Frigg Consensus Voting"
+
+    spec:
+      serviceAccountName: bifrost
+
+      # Pod disruption budget
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - bifrost
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: bifrost
+          image: localhost:30475/bifrost:all-agents
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8100
+              protocol: TCP
+
+          # Environment from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: bifrost-config
+
+          # Environment from Secret
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bifrost-db-secret
+                  key: DATABASE_URL
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8100
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8100
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+          # Resource limits
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/cache
+            - name: memvid
+              mountPath: /app/memvid
+
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: memvid
+          emptyDir:
+            sizeLimit: 2Gi
+
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+
+---
+# ServiceAccount for Bifrost
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+
+---
+# Role for Bifrost (minimal permissions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+subjects:
+  - kind: ServiceAccount
+    name: bifrost
+    namespace: asgard-rl
+roleRef:
+  kind: Role
+  name: bifrost
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bifrost
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: bifrost
+
+---
+# NetworkPolicy: Restrict traffic to Bifrost
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bifrost
+  namespace: asgard-rl
+spec:
+  podSelector:
+    matchLabels:
+      app: bifrost
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: asgard-rl
+      ports:
+        - protocol: TCP
+          port: 8100
+    - from:
+        - podSelector:
+            matchLabels:
+              role: dashboard
+      ports:
+        - protocol: TCP
+          port: 8100
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow to MariaDB (asgard-infra)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: asgard-infra
+      ports:
+        - protocol: TCP
+          port: 3306
+    # Allow to Mimir & other services (asgard)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: asgard
+      ports:
+        - protocol: TCP
+          port: 8090
+        - protocol: TCP
+          port: 3306

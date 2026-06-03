@@ -1,0 +1,246 @@
+name: Build & Deploy Bifrost
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Dockerfile'
+      - '.github/workflows/build-and-deploy.yml'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: asgard-ai/bifrost
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Step 1: Check & Test Rust code
+  check:
+    runs-on: ubuntu-latest
+    name: Cargo Check & Test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run clippy
+        run: cargo clippy --package bifrost --all-targets -- -D warnings
+        env:
+          SQLX_OFFLINE: true
+
+      - name: Run tests
+        run: cargo test --package bifrost
+        env:
+          SQLX_OFFLINE: true
+
+  # Step 2: Build Docker image
+  build:
+    runs-on: ubuntu-latest
+    needs: check
+    name: Build Docker Image
+    if: github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SQLX_OFFLINE=true
+
+  # Step 3: Deploy to Kubernetes (main branch only)
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    name: Deploy to K8s
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28'
+
+      - name: Set Kubernetes context
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl config use-context asgard-prod
+
+      - name: Update Bifrost image
+        run: |
+          kubectl set image deployment/bifrost \
+            bifrost=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            -n asgard-rl
+          kubectl rollout status deployment/bifrost -n asgard-rl --timeout=5m
+
+      - name: Verify deployment health
+        run: |
+          kubectl get pods -n asgard-rl
+          kubectl get svc -n asgard-rl
+          kubectl logs -l app=bifrost -n asgard-rl --tail=50
+
+      - name: Run smoke test
+        run: |
+          # Port forward
+          kubectl port-forward svc/bifrost 8100:8100 -n asgard-rl &
+          sleep 3
+
+          # Test API endpoint
+          curl -f http://localhost:8100/api/v1/rl/check-deployments || \
+            (echo "Health check failed" && exit 1)
+
+  # Step 4: Notify deployment status
+  notify:
+    runs-on: ubuntu-latest
+    needs: [check, build]
+    name: Notify Status
+    if: always()
+
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [[ "${{ needs.check.result }}" == "success" && "${{ needs.build.result }}" == "success" ]]; then
+            echo "status=✅ Build successful" >> $GITHUB_OUTPUT
+          else
+            echo "status=❌ Build failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK != ''
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Bifrost Build: ${{ steps.status.outputs.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Bifrost RL Governance*\n${{ steps.status.outputs.status }}\nBranch: `${{ github.ref_name }}`\nCommit: `${{ github.sha }}`"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Step 5: Create release (on version tags)
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Bifrost ${{ steps.version.outputs.version }}
+          body: |
+            ## RL Governance Backend Release
+
+            **Version**: ${{ steps.version.outputs.version }}
+            **Docker Image**: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}`
+
+            ### Changes
+            See commit history for details.
+
+            ### Deployment
+            ```bash
+            kubectl set image deployment/bifrost \
+              bifrost=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }} \
+              -n asgard-rl
+            ```
+
+            ### What's Included
+            - ✅ Multi-agent RL governance
+            - ✅ Odin & Frigg consensus voting
+            - ✅ Canary → Staged → Full deployment
+            - ✅ Auto-rollback on metric degradation
+            - ✅ Compliance audit trail
+
+          draft: false
+          prerelease: false
