@@ -417,6 +417,15 @@ impl OverseerManager {
                 match super::mcp::hermodr_list_tools(&disco_client, &url, tenant_id).await {
                     Ok(tools) if !tools.is_empty() => {
                         for t in tools {
+                            // Only attach tools the agent actually opted into
+                            // (agent_configs.tools). A Hermodr server may expose
+                            // extra tools (e.g. claude_cli_*) the agent shouldn't
+                            // see — attaching them all clutters the toolset and
+                            // hurts tool-selection on smaller local models. Empty
+                            // allowlist → attach all (back-compat).
+                            if !agent_tools.is_empty() && !agent_tools.iter().any(|a| a == &t.name) {
+                                continue;
+                            }
                             tracing::info!(
                                 agent_id = agent_id, tenant_id = tenant_id,
                                 mcp_server = entry.as_str(), tool = t.name.as_str(),
@@ -476,10 +485,17 @@ impl OverseerManager {
             }
         }
 
+        // Only surface a Patient ID line for patient-scoped (medical) requests.
+        // Non-medical tenants (e.g. asgard_analytics) have no patient and the
+        // "Patient ID: not specified" noise was biasing the model toward refusals.
+        let patient_line = match patient_id {
+            Some(pid) => format!("Patient ID: {}\n", pid),
+            None => String::new(),
+        };
         let augmented_query = if history_text.is_empty() {
-            format!("Tenant ID: {}\nPatient ID: {}\nQuery: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), safe_query, manual_context)
+            format!("Tenant ID: {}\n{}Query: {}\n{}", tenant_id, patient_line, safe_query, manual_context)
         } else {
-            format!("Tenant ID: {}\nPatient ID: {}\nPrevious Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), history_text, safe_query, manual_context)
+            format!("Tenant ID: {}\n{}Previous Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_line, history_text, safe_query, manual_context)
         };
 
         // In bypass mode (heimdall/gemini) all grounding is already injected
@@ -489,7 +505,7 @@ impl OverseerManager {
         let augmented_query = if bypass_tools && !mcp_tools_attached {
             format!(
                 "{augmented_query}\n\nIMPORTANT: All the context you need is provided above. \
-                 Answer the query DIRECTLY now using that context and your medical knowledge. \
+                 Answer the query DIRECTLY now using that context and your domain knowledge. \
                  Put your COMPLETE answer in the `final_answer` field and set `action_required` to null. \
                  Do NOT request any tool, search, or further action — there will be no further turns."
             )
