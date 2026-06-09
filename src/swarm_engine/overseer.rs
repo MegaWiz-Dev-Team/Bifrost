@@ -382,9 +382,19 @@ impl OverseerManager {
         // (and on non-bypass local models); MLX gemma tool-calling is not, so
         // for those we discover + warn rather than attach.
         if !agent_mcp_servers.is_empty() {
+            // Local MLX (e.g. gemma-4-26b) tool-calling in this structured-output
+            // swarm is OPT-IN: historically MLX tool-calling was treated as
+            // unreliable here, but gemma-4-26b calls Hermodr MCP tools correctly
+            // (verified for asgard_analytics). Set SWARM_MLX_MCP_TOOLS=true on the
+            // deployment to attach MCP tools for non-bypass providers too. Default
+            // off → unchanged behaviour for existing (medical) deployments.
+            let allow_local_mcp = std::env::var("SWARM_MLX_MCP_TOOLS")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             let mcp_capable = !bypass_tools
                 || provider_lower == "gemini"
-                || model_name.contains("gemini");
+                || model_name.contains("gemini")
+                || allow_local_mcp;
             let disco_client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
