@@ -382,9 +382,19 @@ impl OverseerManager {
         // (and on non-bypass local models); MLX gemma tool-calling is not, so
         // for those we discover + warn rather than attach.
         if !agent_mcp_servers.is_empty() {
+            // Local MLX (e.g. gemma-4-26b) tool-calling in this structured-output
+            // swarm is OPT-IN: historically MLX tool-calling was treated as
+            // unreliable here, but gemma-4-26b calls Hermodr MCP tools correctly
+            // (verified for asgard_analytics). Set SWARM_MLX_MCP_TOOLS=true on the
+            // deployment to attach MCP tools for non-bypass providers too. Default
+            // off → unchanged behaviour for existing (medical) deployments.
+            let allow_local_mcp = std::env::var("SWARM_MLX_MCP_TOOLS")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             let mcp_capable = !bypass_tools
                 || provider_lower == "gemini"
-                || model_name.contains("gemini");
+                || model_name.contains("gemini")
+                || allow_local_mcp;
             let disco_client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
@@ -407,6 +417,15 @@ impl OverseerManager {
                 match super::mcp::hermodr_list_tools(&disco_client, &url, tenant_id).await {
                     Ok(tools) if !tools.is_empty() => {
                         for t in tools {
+                            // Only attach tools the agent actually opted into
+                            // (agent_configs.tools). A Hermodr server may expose
+                            // extra tools (e.g. claude_cli_*) the agent shouldn't
+                            // see — attaching them all clutters the toolset and
+                            // hurts tool-selection on smaller local models. Empty
+                            // allowlist → attach all (back-compat).
+                            if !agent_tools.is_empty() && !agent_tools.iter().any(|a| a == &t.name) {
+                                continue;
+                            }
                             tracing::info!(
                                 agent_id = agent_id, tenant_id = tenant_id,
                                 mcp_server = entry.as_str(), tool = t.name.as_str(),
@@ -466,10 +485,17 @@ impl OverseerManager {
             }
         }
 
+        // Only surface a Patient ID line for patient-scoped (medical) requests.
+        // Non-medical tenants (e.g. asgard_analytics) have no patient and the
+        // "Patient ID: not specified" noise was biasing the model toward refusals.
+        let patient_line = match patient_id {
+            Some(pid) => format!("Patient ID: {}\n", pid),
+            None => String::new(),
+        };
         let augmented_query = if history_text.is_empty() {
-            format!("Tenant ID: {}\nPatient ID: {}\nQuery: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), safe_query, manual_context)
+            format!("Tenant ID: {}\n{}Query: {}\n{}", tenant_id, patient_line, safe_query, manual_context)
         } else {
-            format!("Tenant ID: {}\nPatient ID: {}\nPrevious Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_id.unwrap_or("not specified"), history_text, safe_query, manual_context)
+            format!("Tenant ID: {}\n{}Previous Context:\n{}\n\nNew Query: {}\n{}", tenant_id, patient_line, history_text, safe_query, manual_context)
         };
 
         // In bypass mode (heimdall/gemini) all grounding is already injected
@@ -479,7 +505,7 @@ impl OverseerManager {
         let augmented_query = if bypass_tools && !mcp_tools_attached {
             format!(
                 "{augmented_query}\n\nIMPORTANT: All the context you need is provided above. \
-                 Answer the query DIRECTLY now using that context and your medical knowledge. \
+                 Answer the query DIRECTLY now using that context and your domain knowledge. \
                  Put your COMPLETE answer in the `final_answer` field and set `action_required` to null. \
                  Do NOT request any tool, search, or further action — there will be no further turns."
             )
