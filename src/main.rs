@@ -23,6 +23,7 @@ pub mod retrieval;
 pub mod rl_scheduler;
 pub mod rl_deployment_monitor;
 pub mod rl_admin_routes;
+pub mod security_headers;
 
 // HTTP-layer modules live in `lib.rs` so integration tests can reach them.
 use bifrost::{agents, agent_groups, auth_jwt as _, middleware};
@@ -372,7 +373,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(agents_router)
         .merge(agent_groups_router)
         .nest("/api/v1", rl_admin_router)
-        .fallback_service(serve_dir);
+        .fallback_service(serve_dir)
+        // Defense-in-depth security headers (X-Frame-Options, CSP,
+        // X-Content-Type-Options). Ingress is the primary control
+        // (Asgard#99 PR-1); this layer keeps the app safe when bypassed.
+        .layer(axum::middleware::from_fn(security_headers::set_security_headers));
 
     let addr = "0.0.0.0:8100";
     tracing::info!("Listening on {}", addr);
