@@ -28,7 +28,8 @@ const CSP_BASELINE: &str = "default-src 'self'; \
      connect-src 'self'; \
      frame-ancestors 'self'; \
      base-uri 'self'; \
-     form-action 'self'";
+     form-action 'self'; \
+     object-src 'none'";
 
 pub async fn set_security_headers(req: Request<Body>, next: Next) -> Response {
     let mut res = next.run(req).await;
