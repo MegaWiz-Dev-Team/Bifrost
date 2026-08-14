@@ -560,6 +560,8 @@ pub struct MimirKbSearchTool {
     tenant_id: String,
     k: u32,
     client: reqwest::Client,
+    /// Mimir service Bearer JWT (Group-B authz). Empty until provisioned → no Authorization sent.
+    mimir_token: String,
 }
 
 impl MimirKbSearchTool {
@@ -572,6 +574,7 @@ impl MimirKbSearchTool {
                 .timeout(std::time::Duration::from_secs(20))
                 .build()
                 .expect("reqwest client build"),
+            mimir_token: std::env::var("BIFROST_MIMIR_TOKEN").unwrap_or_default(),
         }
     }
 
@@ -592,11 +595,17 @@ impl MimirKbSearchTool {
 
     pub async fn call(&self, args: ExtractorArgs) -> Result<String, std::io::Error> {
         let url = format!("{}/api/v1/knowledge/search", self.mimir_url.trim_end_matches('/'));
-        let resp = self
+        let mut rb = self
             .client
             .get(&url)
             .query(&[("q", args.query.as_str()), ("k", &self.k.to_string())])
-            .header("X-Tenant-Id", &self.tenant_id)
+            .header("X-Tenant-Id", &self.tenant_id);
+        // Service auth for Mimir (Group-B authz): send a Bearer JWT when provisioned so the
+        // route can be gated. Empty env keeps the old behaviour until the token is set.
+        if !self.mimir_token.is_empty() {
+            rb = rb.header("Authorization", format!("Bearer {}", self.mimir_token));
+        }
+        let resp = rb
             .send()
             .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("mimir-kb get: {e}")))?;
