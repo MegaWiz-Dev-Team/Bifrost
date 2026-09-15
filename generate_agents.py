@@ -6,6 +6,10 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 from bifrost.core.service_agents import SERVICE_AGENTS
 
+# Gemini 2.5 Flash is retired (Vertex/Gemini API: public access ends 2026-10-20, shutdown
+# 2027-03-31); 3.5 Flash-Lite is Google's like-for-like successor at the same price.
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 base_dir = os.path.join(PROJECT_ROOT, "bifrost", "agents")
 os.makedirs(base_dir, exist_ok=True)
 with open(os.path.join(base_dir, "__init__.py"), "w") as f:
@@ -25,7 +29,7 @@ for agent in SERVICE_AGENTS:
 
 root_agent = LlmAgent(
     name="{agent.persona_name}",
-    model="gemini-2.5-flash",
+    model={GEMINI_MODEL!r},
     description="{agent.persona_description}",
     instruction="""Role: {agent.persona_role}
 Capabilities: {', '.join(agent.capabilities)}
@@ -55,7 +59,7 @@ code = f'''from google.adk.agents import LlmAgent
 
 agent = LlmAgent(
     name="{asgard.persona_name}",
-    model="gemini-2.5-flash",
+    model={GEMINI_MODEL!r},
     description="{asgard.persona_description}",
     instruction="""You are Asgard, the master Platform Orchestrator.
 Role: {asgard.persona_role}
