@@ -27,16 +27,23 @@ data:
 
 ---
 # Secret: Database Credentials
-apiVersion: v1
-kind: Secret
-metadata:
-  name: bifrost-db-secret
-  namespace: asgard-rl
-type: Opaque
-stringData:
-  DATABASE_URL: "mysql://mimir:671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620@192.168.194.212:3306/mimir"
-  DB_USER: "mimir"
-  DB_PASSWORD: "671c6f010d0e22d92bd7ec11422c08f4455c843d1a0e2620"
+#
+# The `bifrost-db-secret` Secret is NOT defined here. It must exist in the
+# `asgard-rl` namespace before this manifest is applied — create it out of
+# band (never commit real values to git):
+#
+#   kubectl -n asgard-rl create secret generic bifrost-db-secret \
+#     --from-literal=DATABASE_URL="mysql://<user>:<password>@<db-host>:3306/<db-name>" \
+#     --from-literal=DB_USER="<user>" \
+#     --from-literal=DB_PASSWORD="<password>"
+#
+# To rotate: update the MariaDB user's password, then replace the secret
+# (`kubectl -n asgard-rl create secret generic bifrost-db-secret --from-literal=... \
+#   --dry-run=client -o yaml | kubectl apply -f -`) and restart the consumer:
+#   kubectl -n asgard-rl rollout restart deploy/bifrost
+#
+# See Asgard's docs/security/SECRETS.md for the full rotation runbook pattern
+# (same approach used there for the Yggdrasil/MariaDB/Neo4j secrets).
 
 ---
 # Service: Expose Bifrost on port 8100
